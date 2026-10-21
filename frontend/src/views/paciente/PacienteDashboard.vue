@@ -10,6 +10,20 @@ defineProps({
 })
 const solicitacoes = ref([])
 
+function formatarDataLocal(data) {
+  if (!data) return 'Não informada'
+
+  const dataUTC = new Date(data.replace(' ', 'T') + 'Z')
+
+  return dataUTC.toLocaleString('pt-BR', {
+    timeZone: 'America/Belem',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  })
+}
 async function carregarSolicitacoes() {
   try {
     const resposta = await fetch(
@@ -64,7 +78,7 @@ onMounted(() => {
   class="item-solicitacao"
 >
   <p><strong>Especialidade:</strong> {{ solicitacao.especialidade }}</p>
-  <p><strong>Data da solicitação:</strong> {{ solicitacao.data_solicitacao }}</p>
+  <p><strong>Data da solicitação:</strong> {{ formatarDataLocal(solicitacao.data_solicitacao) }}</p>
   <p>
   <strong>Status:</strong>
   <span :class="['status-badge', 'status-' + solicitacao.status.toLowerCase()]">

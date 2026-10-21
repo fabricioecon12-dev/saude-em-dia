@@ -8,7 +8,20 @@ defineProps({
     required: true
   }
 })
+function formatarDataLocal(data) {
+  if (!data) return 'Não informada'
 
+  const dataUTC = new Date(data.replace(' ', 'T') + 'Z')
+
+  return dataUTC.toLocaleString('pt-BR', {
+    timeZone: 'America/Belem',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  })
+}
 const totalSolicitacoes = ref(0)
 const solicitacoesPendentes = ref(0)
 const solicitacoesAgendadas = ref(0)
@@ -237,12 +250,7 @@ onMounted(() => {
     <td>{{ solicitacao.paciente }}</td>
     <td>{{ solicitacao.especialidade }}</td>
     <td>
-  {{
-    solicitacao.data_solicitacao
-      ? solicitacao.data_solicitacao.substring(0, 10).split('-').reverse().join('/')
-        + ' às ' + solicitacao.data_solicitacao.substring(11, 16)
-      : 'Não informada'
-  }}
+  {{ formatarDataLocal(solicitacao.data_solicitacao) }}
 </td>
     <td>
   <span
