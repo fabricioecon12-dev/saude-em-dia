@@ -296,7 +296,8 @@ onMounted(() => {
   Ver histórico
 </button>
 <h4 v-if="historicoConsultado">Histórico de alterações</h4>
-<ul v-if="historicoConsultado && historicoSolicitacao.length > 0">
+<ul v-if="historicoConsultado && historicoSolicitacao.length > 0"
+  class="lista-historico-admin">
   <li v-for="registro in historicoSolicitacao" :key="registro.id">
     {{ registro.status_anterior }} → {{ registro.status_novo }}
 <small>Data da alteração: {{ new Date(registro.data_alteracao.replace(' ', 'T') + 'Z').toLocaleString('pt-BR', { timeZone: 'UTC' }) }}</small>

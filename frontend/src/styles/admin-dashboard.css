@@ -357,3 +357,48 @@
   border-left-color: #D64545;
   color: #A12626;
 }
+/* Painel de gerenciamento de solicitações */
+.painel-gerenciamento {
+  margin-top: 28px;
+  padding: 28px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  box-shadow: 0 8px 24px rgba(16, 36, 60, 0.06);
+}
+
+.painel-gerenciamento h3 {
+  margin: 0 0 20px;
+  color: #10243c;
+  font-size: 22px;
+  font-weight: 700;
+}
+
+/* Histórico de alterações das solicitações */
+
+.lista-historico-admin {
+  list-style: none;
+  padding: 0;
+  margin: 16px 0 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.lista-historico-admin li {
+  background: #f5f8fa;
+  border: 1px solid #e0e8ee;
+  border-left: 4px solid #12849a;
+  border-radius: 10px;
+  padding: 14px 18px;
+  color: #10243c;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.lista-historico-admin li small {
+  display: block;
+  margin-top: 6px;
+  color: #64748b;
+  font-size: 12px;
+}

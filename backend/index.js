@@ -21,7 +21,11 @@ app.use(session({
   }
 }));
 app.use((req, res, next) => {
-  res.setHeader('Access-Control-Allow-Origin', 'http://localhost:5173');
+ const origem = req.headers.origin;
+const origensPermitidas = ['http://localhost:5173', 'http://localhost:4173'];
+if (origensPermitidas.includes(origem)) {
+  res.setHeader('Access-Control-Allow-Origin', origem);
+}
   res.setHeader('Access-Control-Allow-Credentials', 'true');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
