@@ -46,33 +46,33 @@ O **Saúde em Dia** possui finalidade exclusivamente acadêmica e demonstrativa.
 
 ### Funcionalidades do Paciente
 
-- **Acompanhamento de solicitações:** visualizar suas solicitações de consultas médicas especializadas e exames, incluindo a situação atual de cada pedido.
+- **Acompanhamento de solicitações (implementado):** visualizar as solicitações de atendimento vinculadas ao paciente autenticado, incluindo especialidade e situação atual de cada pedido, respeitando as permissões de acesso.
 
-- **Acompanhamento de agendamentos:** consultar informações sobre consultas e exames agendados, incluindo datas, horários, unidades de saúde e situações dos agendamentos, quando disponíveis.
+- **Acompanhamento de agendamentos (parcialmente implementado):** acompanhar a situação das solicitações de atendimento, incluindo o status de agendamento. A exibição de datas, horários e unidades de saúde permanece prevista para etapas futuras.
 
-- **Histórico de alterações:** consultar o registro das mudanças de situação de suas solicitações, permitindo acompanhar a evolução de cada pedido ao longo do tempo.
+- **Histórico de alterações (parcialmente implementado):** o sistema registra as mudanças de status das solicitações, incluindo situação anterior, nova situação e data da alteração. A consulta desse histórico já está disponível no painel administrativo; sua disponibilização no painel do paciente está prevista para uma próxima etapa.
 
-- **Notificações:** visualizar avisos sobre alterações de situação das solicitações e dos agendamentos, com possibilidade de marcar notificações como lidas.
+- **Notificações (parcialmente implementadas):** o sistema apresenta mensagens de confirmação e erro durante determinadas operações. A implementação de uma central de notificações para o paciente, com avisos sobre alterações de status e possibilidade de marcar notificações como lidas, está prevista para etapas futuras.
 
-- **Perfil do Paciente:** consultar suas informações cadastrais no ambiente demonstrativo, respeitando as permissões de acesso definidas para o usuário.
+- **Perfil do Paciente (parcialmente implementado):** o sistema identifica o paciente autenticado e permite o acesso às suas próprias solicitações, respeitando as permissões de usuário. A criação de uma área específica para consulta e gerenciamento de informações cadastrais está prevista para etapas futuras.
 
 ### Funcionalidades do Administrador
 
 - **Painel Administrativo (Dashboard):** visualizar um resumo das solicitações, agendamentos e informações operacionais do sistema, utilizando dados demonstrativos.
 
-- **Gerenciamento de solicitações:** cadastrar, consultar e atualizar solicitações demonstrativas de consultas médicas especializadas e exames, respeitando as regras de situação e o registro do histórico de alterações.
+- **Gerenciamento de solicitações:** consultar solicitações demonstrativas de consultas médicas especializadas, atualizar suas situações e visualizar o histórico de alterações, respeitando as permissões do Administrador.
 
-- **Gerenciamento de agendamentos:** cadastrar, consultar e atualizar agendamentos demonstrativos de consultas e exames, incluindo datas, horários, unidades de saúde e situações dos agendamentos.
+- **Gerenciamento de agendamentos (planejado):** permitir ao Administrador cadastrar, consultar e atualizar agendamentos demonstrativos de consultas e exames, incluindo datas, horários, unidades de saúde e situações dos agendamentos. Essa funcionalidade está prevista para etapas futuras do desenvolvimento.
 
-- **Indicadores regionais de saúde:** consultar indicadores organizados por localidade, com identificação das fontes e distinção entre dados oficiais verificados e informações simuladas.
+- **Indicadores regionais de saúde (planejado):** disponibilizar indicadores de saúde organizados por localidade, identificando as fontes dos dados e diferenciando informações oficiais verificadas de dados simulados. Essa funcionalidade está prevista para etapas futuras do desenvolvimento.
 
-- **Gerenciamento de pacientes:** consultar informações cadastrais dos pacientes fictícios utilizados na demonstração, respeitando as permissões de acesso do Administrador.
+- **Gerenciamento de pacientes (planejado):** permitir ao Administrador consultar informações cadastrais dos pacientes fictícios utilizados na demonstração, respeitando as permissões de acesso. A implementação de uma área específica para gerenciamento de pacientes está prevista para etapas futuras.
 
-- **Gerenciamento de procedimentos:** consultar e administrar o catálogo demonstrativo de procedimentos e exames utilizados nas solicitações do sistema.
+- **Gerenciamento de procedimentos (planejado):** permitir ao Administrador consultar e administrar um catálogo demonstrativo de procedimentos médicos e exames utilizados nas solicitações do sistema. A implementação de uma área específica para esse gerenciamento está prevista para etapas futuras.
 
-- **Gerenciamento de unidades de saúde:** consultar e administrar o cadastro de unidades de saúde fictícias utilizadas nos agendamentos demonstrativos, incluindo suas informações de identificação e localização.
+- **Gerenciamento de unidades de saúde (planejado):** permitir ao Administrador cadastrar, consultar e atualizar informações demonstrativas sobre unidades de saúde, incluindo identificação e localização. A implementação desse módulo está prevista para etapas futuras do desenvolvimento.
 
-- **Gerenciamento das fontes de dados:** consultar e administrar o registro das fontes utilizadas nos indicadores regionais, incluindo identificação, origem e referência, diferenciando informações oficiais verificadas de dados demonstrativos.
+- **Gerenciamento das fontes de dados (planejado):** permitir ao Administrador consultar e administrar as fontes utilizadas nos indicadores regionais de saúde, incluindo identificação, origem e referência, diferenciando informações oficiais verificadas de dados demonstrativos. Essa funcionalidade está prevista para etapas futuras.
 
 ## 4. Tecnologias e Arquitetura
 
@@ -82,11 +82,11 @@ O Saúde em Dia foi planejado como uma aplicação web com arquitetura cliente-s
 
 - **Vue 3:** framework JavaScript utilizado para construir a interface web por meio de componentes reutilizáveis e reativos.
 - **Vite:** ferramenta utilizada para organizar o ambiente de desenvolvimento e gerar a versão de distribuição do Frontend.
-- **PrimeVue:** biblioteca de componentes visuais para Vue 3, utilizada na construção de elementos de interface padronizados e reutilizáveis.
-- **Tailwind CSS:** framework CSS utilitário utilizado para estilização responsiva e manutenção da identidade visual da aplicação.
-- **Lucide:** biblioteca de ícones utilizada para facilitar a identificação visual de funcionalidades e ações na interface.
-- **Chart.js:** biblioteca JavaScript utilizada para apresentar gráficos e visualizações dos indicadores regionais e das informações administrativas.
-- **SVG e mapas regionais:** utilização de gráficos vetoriais e referências geográficas do IBGE para representar localidades e apoiar a visualização interativa dos indicadores regionais, respeitando a identificação das fontes de dados.
+- **PrimeVue (planejado):** biblioteca de componentes visuais para Vue 3, considerada para futuras melhorias da interface. Atualmente, os componentes da aplicação são desenvolvidos com Vue 3 e estilização CSS própria.
+- **Tailwind CSS (planejado):** framework CSS utilitário considerado para futuras melhorias de estilização e responsividade. Atualmente, a aplicação utiliza CSS próprio para definir a aparência e a organização das interfaces.
+- **Lucide (planejado):** biblioteca de ícones considerada para futuras melhorias na identificação visual das funcionalidades e ações da interface. Atualmente, essa biblioteca não consta nas dependências do Frontend.
+- **Chart.js (planejado):** biblioteca JavaScript considerada para a criação de gráficos e visualizações de indicadores regionais de saúde e informações administrativas. Sua integração está prevista para etapas futuras do desenvolvimento.
+- **SVG e mapas regionais (planejado):** utilização futura de gráficos vetoriais e referências geográficas do IBGE para representar localidades e apoiar a visualização de indicadores regionais de saúde. A implementação dos mapas interativos está prevista para etapas posteriores do projeto, com identificação das fontes de dados utilizadas.
 
 ### Backend
 
@@ -97,12 +97,70 @@ O Saúde em Dia foi planejado como uma aplicação web com arquitetura cliente-s
 
 ### Banco de Dados
 
-- **SQLite:** sistema de gerenciamento de banco de dados relacional utilizado para armazenar as informações demonstrativas da aplicação, incluindo usuários, localidades, unidades de saúde, procedimentos, solicitações, agendamentos, históricos de situação, notificações e indicadores regionais.
-- **Modelagem relacional e integridade dos dados:** organização do banco em 11 entidades relacionadas, utilizando chaves primárias, chaves estrangeiras, normalização e regras de integridade para manter a consistência dos registros demonstrativos e dos relacionamentos entre usuários, solicitações, agendamentos e demais informações do sistema.
+- **SQLite:** banco de dados relacional utilizado para armazenar os dados demonstrativos da aplicação, incluindo usuários, solicitações de atendimento e histórico de alterações de situação. O acesso ao banco é realizado por meio da biblioteca better-sqlite3. Outras estruturas, como agendamentos completos, notificações e indicadores regionais, estão previstas para a evolução do projeto.
+- **Modelagem relacional e integridade dos dados:** o banco de dados implementado possui três tabelas principais: usuarios, solicitacoes e historico_solicitacoes. A estrutura utiliza chaves primárias, chaves estrangeiras e restrições de integridade para organizar os dados e preservar os relacionamentos entre usuários, solicitações e seus históricos. A ampliação da modelagem para outras entidades está prevista para etapas futuras.
 
 ## 5. Como Executar
 
-O Saúde em Dia encontra-se em fase de desenvolvimento. As instruções para instalação das dependências, configuração do ambiente e execução do Frontend e do Backend serão documentadas nesta seção após a implementação e a validação dos respectivos procedimentos.
+O Saúde em Dia é uma aplicação web demonstrativa desenvolvida com Vue 3, Vite, Node.js, Express e SQLite. Para executar o sistema localmente, é necessário ter o Node.js e o npm instalados. O Frontend e o Backend possuem dependências próprias e devem ser iniciados separadamente. As instruções de instalação e execução estão apresentadas a seguir.
+
+### 5.1. Instalação e execução do Backend
+
+Abra um terminal na pasta principal do projeto e acesse o diretório do Backend:
+
+```powershell
+cd backend
+```
+Instale as dependências do Backend executando:
+
+```powershell
+npm install
+```
+Configure o arquivo `.env` na pasta `backend`, definindo uma chave secreta para as sessões de autenticação:
+
+```text
+SESSION_SECRET=substitua_por_uma_chave_secreta_longa_e_aleatoria
+```
+O arquivo `.env` contém configurações locais e informações sensíveis. Por segurança, ele não deve ser enviado ao GitHub e deve permanecer protegido pelo arquivo `.gitignore`.
+
+Inicialize as tabelas do banco de dados SQLite:
+
+```powershell
+node initDatabase.js
+```
+Cadastre os usuários demonstrativos necessários para testar a autenticação:
+
+```powershell
+node seedUsuarios.js
+```
+Inicie o servidor Backend:
+
+```powershell
+npm start
+```
+### 5.2. Instalação e execução do Frontend
+Abra um novo terminal na pasta principal do projeto, mantendo o Backend em execução, e acesse o diretório do Frontend:
+
+```powershell
+cd frontend
+```
+Instale as dependências do Frontend:
+
+```powershell
+npm install
+```
+Inicie o servidor de desenvolvimento do Frontend:
+
+```powershell
+npm run dev
+```
+Com o Backend e o Frontend em execução, abra o navegador e acesse o endereço local padrão do Vite:
+
+```text
+http://localhost:5173
+```
+
+Caso o Vite informe outra porta no terminal, utilize o endereço exibido por ele.
 
 ## 6. Aviso Demonstrativo e Limitações
 
