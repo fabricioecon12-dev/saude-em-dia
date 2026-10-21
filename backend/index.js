@@ -253,6 +253,60 @@ return res.status(500).json({
 }
 
 })
+app.get('/api/paciente/solicitacoes/:id/historico', (req, res) => {
+    
+    const usuario = req.session.usuario
+
+  if (!usuario) {
+    return res.status(401).json({
+      sucesso: false,
+      mensagem: 'Usuário não autenticado.'
+    })
+  }
+    if (usuario.perfil !== 'PACIENTE') {
+    return res.status(403).json({
+      sucesso: false,
+      mensagem: 'Acesso permitido somente a pacientes.'
+    })
+  }
+    const idSolicitacao = Number(req.params.id)
+
+  if (!Number.isSafeInteger(idSolicitacao) || idSolicitacao <= 0) {
+    return res.status(400).json({
+      sucesso: false,
+      mensagem: 'ID da solicitação inválido.'
+    })
+  }
+    const solicitacao = db.prepare(`
+    SELECT id
+    FROM solicitacoes
+    WHERE id = ? AND usuario_id = ?
+  `).get(idSolicitacao, usuario.id)
+
+  if (!solicitacao) {
+    return res.status(404).json({
+      sucesso: false,
+      mensagem: 'Solicitação não encontrada.'
+    })
+  }
+  const historico = db.prepare(`
+    SELECT
+      id,
+      solicitacao_id,
+      status_anterior,
+      status_novo,
+      data_alteracao
+    FROM historico_solicitacoes
+    WHERE solicitacao_id = ?
+    ORDER BY data_alteracao DESC, id DESC
+  `).all(idSolicitacao)
+    return res.status(200).json({
+    sucesso: true,
+    solicitacao_id: idSolicitacao,
+    historico: historico
+  })
+
+})
 
 app.patch('/api/admin/solicitacoes/:id/status', (req, res) => {
 

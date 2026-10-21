@@ -9,6 +9,8 @@ defineProps({
   }
 })
 const solicitacoes = ref([])
+const historicoSolicitacoes = ref({})
+const historicoAberto = ref(null)
 
 function formatarDataLocal(data) {
   if (!data) return 'Não informada'
@@ -44,7 +46,32 @@ async function carregarSolicitacoes() {
     console.error('Erro ao carregar solicitações:', erro.message)
   }
 }
+async function alternarHistorico(idSolicitacao) {
+  if (historicoAberto.value === idSolicitacao) {
+    historicoAberto.value = null
+  } else {
+    historicoAberto.value = idSolicitacao
+  }
+  try {
+    const resposta = await fetch(
+  `http://localhost:3000/api/paciente/solicitacoes/${idSolicitacao}/historico`,
+  {
+    method: 'GET',
+    credentials: 'include'
+  }
+)
+if (!resposta.ok) {
+  throw new Error('Não foi possível carregar o histórico.')
+}
+const dados = await resposta.json()
+historicoSolicitacoes.value[idSolicitacao] = dados.historico
 
+ } catch (erro) {
+  console.error('Erro ao carregar histórico:', erro.message)
+  historicoSolicitacoes.value[idSolicitacao] = []
+}
+
+}
 onMounted(() => {
   carregarSolicitacoes()
 })
@@ -85,6 +112,27 @@ onMounted(() => {
     {{ solicitacao.status }}
   </span>
 </p>
+<button
+  class="botao-historico"
+  type="button"
+  @click="alternarHistorico(solicitacao.id)"
+>
+  {{ historicoAberto === solicitacao.id ? 'Ocultar histórico' : 'Ver histórico' }}
+</button>
+
+<div v-if="historicoAberto === solicitacao.id">
+  <h3>Histórico da solicitação</h3>
+  <ul v-if="historicoSolicitacoes[solicitacao.id]?.length">
+  <li
+    v-for="registro in historicoSolicitacoes[solicitacao.id]"
+    :key="registro.id"
+  >
+    {{ registro.status_anterior }} → {{ registro.status_novo }}
+    — {{ formatarDataLocal(registro.data_alteracao) }}
+  </li>
+</ul>
+</div>
+
 </div>
 
 </div>
