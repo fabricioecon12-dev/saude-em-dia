@@ -50,7 +50,7 @@ O **Saúde em Dia** possui finalidade exclusivamente acadêmica e demonstrativa.
 
 - **Acompanhamento de agendamentos (parcialmente implementado):** acompanhar a situação das solicitações de atendimento, incluindo o status de agendamento. A exibição de datas, horários e unidades de saúde permanece prevista para etapas futuras.
 
-- **Histórico de alterações (parcialmente implementado):** o sistema registra as mudanças de status das solicitações, incluindo situação anterior, nova situação e data da alteração. A consulta desse histórico já está disponível no painel administrativo; sua disponibilização no painel do paciente está prevista para uma próxima etapa.
+- **Histórico de alterações (implementado):** o sistema registra as mudanças de status das solicitações, incluindo situação anterior, nova situação e data da alteração. O histórico pode ser consultado tanto no painel administrativo quanto no painel do paciente, respeitando as permissões de acesso.
 
 - **Notificações (parcialmente implementadas):** o sistema apresenta mensagens de confirmação e erro durante determinadas operações. A implementação de uma central de notificações para o paciente, com avisos sobre alterações de status e possibilidade de marcar notificações como lidas, está prevista para etapas futuras.
 
@@ -58,11 +58,11 @@ O **Saúde em Dia** possui finalidade exclusivamente acadêmica e demonstrativa.
 
 ### Funcionalidades do Administrador
 
-- **Painel Administrativo (Dashboard):** visualizar um resumo das solicitações, agendamentos e informações operacionais do sistema, utilizando dados demonstrativos.
+- **Painel Administrativo (Dashboard) (implementado):** permite ao administrador visualizar as solicitações de atendimento, acompanhar suas situações e acessar as funcionalidades de gerenciamento disponíveis no ambiente demonstrativo.
 
-- **Gerenciamento de solicitações:** consultar solicitações demonstrativas de consultas médicas especializadas, atualizar suas situações e visualizar o histórico de alterações, respeitando as permissões do Administrador.
+- **Gerenciamento de solicitações (parcialmente implementado):** o administrador pode consultar as solicitações de atendimento, atualizar suas situações e visualizar o histórico das alterações realizadas. O cadastro de novas solicitações pela interface administrativa permanece previsto para etapas futuras.
 
-- **Gerenciamento de agendamentos (planejado):** permitir ao Administrador cadastrar, consultar e atualizar agendamentos demonstrativos de consultas e exames, incluindo datas, horários, unidades de saúde e situações dos agendamentos. Essa funcionalidade está prevista para etapas futuras do desenvolvimento.
+- **Gerenciamento de agendamentos (parcialmente implementado):** o administrador pode alterar a situação das solicitações para AGENDADA e acompanhar o histórico dessas alterações. O cadastro e gerenciamento de datas, horários e unidades de saúde dos agendamentos estão previstos para etapas futuras.
 
 - **Indicadores regionais de saúde (planejado):** disponibilizar indicadores de saúde organizados por localidade, identificando as fontes dos dados e diferenciando informações oficiais verificadas de dados simulados. Essa funcionalidade está prevista para etapas futuras do desenvolvimento.
 
@@ -168,7 +168,7 @@ O Saúde em Dia é um projeto acadêmico de caráter exclusivamente demonstrativ
 
 Todos os dados de pacientes, solicitações, agendamentos, históricos e unidades de saúde utilizados na demonstração serão fictícios. O projeto não utilizará prontuários médicos reais nem informações pessoais sensíveis de pacientes. O controle de acesso por perfis e as medidas de proteção previstas na arquitetura têm finalidade demonstrativa e educacional.
 
-Os indicadores regionais apresentados no Saúde em Dia deverão possuir identificação clara de sua origem. Informações provenientes de fontes oficiais somente serão utilizadas após a verificação de sua procedência e referência. Quando forem empregados dados simulados, essa condição será explicitamente informada. A ausência de informações disponíveis não será interpretada como valor zero, e os indicadores não deverão ser apresentados como dados oficiais sem a devida comprovação.
+Os indicadores regionais estão previstos para etapas futuras do desenvolvimento do Saúde em Dia. Quando implementados, deverão apresentar identificação clara da origem dos dados. Informações provenientes de fontes oficiais somente serão utilizadas após a verificação de sua procedência e referência. Quando forem empregados dados simulados, essa condição será explicitamente informada. A ausência de informações disponíveis não será interpretada como valor zero, e os indicadores não deverão ser apresentados como dados oficiais sem a devida comprovação.
 
 ## 7. Contexto Acadêmico
 
