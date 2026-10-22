@@ -194,6 +194,8 @@ Todos os dados de pacientes, solicitações e históricos utilizados na demonstr
 
 Os indicadores regionais estão previstos para etapas futuras do desenvolvimento do Saúde em Dia. Quando implementados, deverão apresentar identificação clara da origem dos dados. Informações provenientes de fontes oficiais somente serão utilizadas após a verificação de sua procedência e referência. Quando forem empregados dados simulados, essa condição será explicitamente informada. A ausência de informações disponíveis não será interpretada como valor zero, e os indicadores não deverão ser apresentados como dados oficiais sem a devida comprovação.
 
+**Limitação do gerenciamento de sessões:** atualmente, a aplicação utiliza o armazenamento padrão em memória (`MemoryStore`) da biblioteca `express-session`, adequado apenas ao ambiente demonstrativo local. As sessões autenticadas são perdidas quando o servidor Backend é reiniciado. Para uma futura implantação em produção, será necessário configurar um armazenamento persistente de sessões e revisar as configurações de segurança dos cookies, incluindo a utilização de HTTPS e da propriedade `secure`.
+
 ## 7. Contexto Acadêmico
 
 O Saúde em Dia é uma proposta desenvolvida no contexto da Semana Ubíqua UNAMA 2026.2 — Soluções em Sistemas Digitais. O projeto busca aplicar conhecimentos de desenvolvimento web, engenharia de software, banco de dados e experiência do usuário na construção de uma solução demonstrativa voltada à transparência e ao acompanhamento de solicitações de consultas médicas especializadas e exames.
