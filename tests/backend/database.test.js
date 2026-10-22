@@ -328,3 +328,143 @@ test('Deve definir status PENDENTE automaticamente', () => {
     bancoTeste.close();
   }
 });
+
+// Banco temporário para testar o histórico de solicitações
+function criarBancoHistoricoTeste() {
+  const bancoTeste = new Database(':memory:');
+
+  bancoTeste.pragma('foreign_keys = ON');
+
+  bancoTeste.exec(`
+    CREATE TABLE usuarios (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      nome TEXT NOT NULL,
+      email TEXT NOT NULL UNIQUE,
+      senha_hash TEXT NOT NULL,
+      perfil TEXT NOT NULL
+        CHECK (perfil IN ('PACIENTE', 'ADMIN'))
+    );
+
+    CREATE TABLE solicitacoes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      usuario_id INTEGER NOT NULL,
+      especialidade TEXT NOT NULL,
+      data_solicitacao TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      status TEXT NOT NULL DEFAULT 'PENDENTE'
+        CHECK (status IN ('PENDENTE', 'AGENDADA', 'CONCLUIDA', 'CANCELADA')),
+      FOREIGN KEY (usuario_id) REFERENCES usuarios(id)
+    );
+
+    CREATE TABLE historico_solicitacoes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      solicitacao_id INTEGER NOT NULL,
+      status_anterior TEXT NOT NULL,
+      status_novo TEXT NOT NULL,
+      data_alteracao TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (solicitacao_id) REFERENCES solicitacoes(id)
+    );
+  `);
+
+  return bancoTeste;
+}
+
+// Teste 16 — Solicitação inexistente
+test('Deve rejeitar historico com solicitacao inexistente', () => {
+  const bancoTeste = criarBancoHistoricoTeste();
+
+  try {
+    assert.throws(() => {
+      bancoTeste.prepare(`
+        INSERT INTO historico_solicitacoes
+          (solicitacao_id, status_anterior, status_novo)
+        VALUES (?, ?, ?)
+      `).run(999999, 'PENDENTE', 'AGENDADA');
+    }, /FOREIGN KEY constraint failed/);
+  } finally {
+    bancoTeste.close();
+  }
+});
+
+// Teste 17 — Solicitação obrigatória
+test('Deve rejeitar historico sem solicitacao', () => {
+  const bancoTeste = criarBancoHistoricoTeste();
+
+  try {
+    assert.throws(() => {
+      bancoTeste.prepare(`
+        INSERT INTO historico_solicitacoes
+          (solicitacao_id, status_anterior, status_novo)
+        VALUES (?, ?, ?)
+      `).run(null, 'PENDENTE', 'AGENDADA');
+    }, /NOT NULL constraint failed/);
+  } finally {
+    bancoTeste.close();
+  }
+});
+
+// Teste 18 — Status anterior obrigatório
+test('Deve rejeitar historico sem status anterior', () => {
+  const bancoTeste = criarBancoHistoricoTeste();
+
+  try {
+    assert.throws(() => {
+      bancoTeste.prepare(`
+        INSERT INTO historico_solicitacoes
+          (solicitacao_id, status_anterior, status_novo)
+        VALUES (?, ?, ?)
+      `).run(1, null, 'AGENDADA');
+    }, /NOT NULL constraint failed/);
+  } finally {
+    bancoTeste.close();
+  }
+});
+
+// Teste 19 — Status novo obrigatório
+test('Deve rejeitar historico sem status novo', () => {
+  const bancoTeste = criarBancoHistoricoTeste();
+
+  try {
+    assert.throws(() => {
+      bancoTeste.prepare(`
+        INSERT INTO historico_solicitacoes
+          (solicitacao_id, status_anterior, status_novo)
+        VALUES (?, ?, ?)
+      `).run(1, 'PENDENTE', null);
+    }, /NOT NULL constraint failed/);
+  } finally {
+    bancoTeste.close();
+  }
+});
+
+// Teste 20 — Data automática
+test('Deve registrar automaticamente a data do historico', () => {
+  const bancoTeste = criarBancoHistoricoTeste();
+
+  try {
+    const usuario = bancoTeste.prepare(`
+      INSERT INTO usuarios (nome, email, senha_hash, perfil)
+      VALUES (?, ?, ?, ?)
+    `).run('Usuario Teste', 'teste@exemplo.com', 'hash_teste', 'PACIENTE');
+
+    const solicitacao = bancoTeste.prepare(`
+      INSERT INTO solicitacoes (usuario_id, especialidade)
+      VALUES (?, ?)
+    `).run(usuario.lastInsertRowid, 'Cardiologia');
+
+    const historico = bancoTeste.prepare(`
+      INSERT INTO historico_solicitacoes
+        (solicitacao_id, status_anterior, status_novo)
+      VALUES (?, ?, ?)
+    `).run(solicitacao.lastInsertRowid, 'PENDENTE', 'AGENDADA');
+
+    const resultado = bancoTeste.prepare(`
+      SELECT data_alteracao
+      FROM historico_solicitacoes
+      WHERE id = ?
+    `).get(historico.lastInsertRowid);
+
+    assert.ok(resultado.data_alteracao);
+  } finally {
+    bancoTeste.close();
+  }
+});
