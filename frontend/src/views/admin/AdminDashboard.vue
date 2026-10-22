@@ -300,7 +300,7 @@ onMounted(() => {
   class="lista-historico-admin">
   <li v-for="registro in historicoSolicitacao" :key="registro.id">
     {{ registro.status_anterior }} → {{ registro.status_novo }}
-<small>Data da alteração: {{ new Date(registro.data_alteracao.replace(' ', 'T') + 'Z').toLocaleString('pt-BR', { timeZone: 'UTC' }) }}</small>
+<small>Data da alteração: {{ formatarDataLocal(registro.data_alteracao) }}</small>
   </li>
 </ul>
 <p v-if="historicoConsultado && historicoSolicitacao.length === 0">Nenhuma alteração registrada.</p>
