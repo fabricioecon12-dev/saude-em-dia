@@ -69,3 +69,41 @@ test('Deve rejeitar perfil de usuário inválido', () => {
 
   bancoTeste.close();
 });
+
+test('Deve rejeitar cadastro de usuarios com email duplicado', () => {
+  const bancoTeste = new Database(':memory:');
+
+  bancoTeste.exec(`
+    CREATE TABLE usuarios (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      nome TEXT NOT NULL,
+      email TEXT NOT NULL UNIQUE,
+      senha_hash TEXT NOT NULL,
+      perfil TEXT NOT NULL
+        CHECK (perfil IN ('PACIENTE', 'ADMIN'))
+    );
+  `);
+
+  const inserirUsuario = bancoTeste.prepare(`
+    INSERT INTO usuarios (nome, email, senha_hash, perfil)
+    VALUES (?, ?, ?, ?)
+  `);
+
+  inserirUsuario.run(
+    'Usuario Teste 1',
+    'teste@exemplo.com',
+    'hash_teste_1',
+    'PACIENTE'
+  );
+
+  assert.throws(() => {
+    inserirUsuario.run(
+      'Usuario Teste 2',
+      'teste@exemplo.com',
+      'hash_teste_2',
+      'PACIENTE'
+    );
+  }, /UNIQUE constraint failed/);
+
+  bancoTeste.close();
+});
