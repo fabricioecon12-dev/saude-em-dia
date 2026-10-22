@@ -402,3 +402,7 @@
   color: #64748b;
   font-size: 12px;
 }
+
+.painel-gerenciamento > button + button {
+  margin-left: 12px;
+}

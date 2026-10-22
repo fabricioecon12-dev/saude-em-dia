@@ -32,6 +32,7 @@ const mensagemNotificacao = ref('')
 const tipoNotificacao = ref('')
 const historicoSolicitacao = ref([])
 const historicoConsultado = ref(false)
+const painelGerenciamento = ref(null)
 
 async function mostrarNotificacao(mensagem, tipo) {
   mensagemNotificacao.value = mensagem
@@ -44,11 +45,28 @@ async function mostrarNotificacao(mensagem, tipo) {
 })
 }
 
-function selecionarSolicitacao(solicitacao) {
+async function selecionarSolicitacao(solicitacao) {
   mensagemNotificacao.value = ''
   solicitacaoSelecionada.value = solicitacao
   novoStatus.value = solicitacao.status
+
+  historicoSolicitacao.value = []
+  historicoConsultado.value = false
+
+  await nextTick()
+
+  painelGerenciamento.value?.scrollIntoView({
+    behavior: 'smooth',
+    block: 'start'
+  })
 }
+function fecharGerenciamento() {
+  solicitacaoSelecionada.value = null
+  novoStatus.value = ''
+  historicoSolicitacao.value = []
+  historicoConsultado.value = false
+}
+
 async function consultarHistorico(solicitacao) {
    try {
     const resposta = await fetch(
@@ -285,15 +303,25 @@ onMounted(() => {
 
 <div
   v-if="solicitacaoSelecionada"
+  ref="painelGerenciamento"
   class="painel-gerenciamento"
 >
   <h3>Gerenciar solicitação</h3>
+  
+<button
+  type="button"
+  class="botao-gerenciar"
+  @click="fecharGerenciamento"
+>
+  Fechar gerenciamento
+</button>
+
   <button
   type="button"
   class="botao-gerenciar"
-  @click="consultarHistorico(solicitacaoSelecionada)"
+ @click="historicoConsultado ? historicoConsultado = false : consultarHistorico(solicitacaoSelecionada)"
 >
-  Ver histórico
+  {{ historicoConsultado ? 'Ocultar histórico' : 'Ver histórico' }}
 </button>
 <h4 v-if="historicoConsultado">Histórico de alterações</h4>
 <ul v-if="historicoConsultado && historicoSolicitacao.length > 0"
