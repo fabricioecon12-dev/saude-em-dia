@@ -172,21 +172,7 @@ app.get('/api/admin/solicitacoes/resumo', (req, res) => {
     });
 }
 
-  if (!usuario) {
-    return res.status(401).json({
-      sucesso: false,
-      mensagem: 'Usuário não autenticado.'
-    })
-  }
-if (usuario.perfil !== 'PACIENTE') {
-    return res.status(403).json({
-        sucesso: false,
-        mensagem: 'Acesso permitido somente para pacientes.'
-    });
-}
-
-
-  if (usuario.perfil !== 'ADMIN') {
+   if (usuario.perfil !== 'ADMIN') {
     return res.status(403).json({
       sucesso: false,
       mensagem: 'Acesso permitido somente para administradores.'
