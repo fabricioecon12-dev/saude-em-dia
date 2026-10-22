@@ -95,6 +95,8 @@ O Saúde em Dia foi planejado como uma aplicação web com arquitetura cliente-s
 - **API REST:** interface de comunicação entre Frontend e Backend, utilizando requisições HTTP e respostas em formato JSON para consultar e gerenciar informações demonstrativas, conforme as permissões de cada perfil de usuário.
 - **Autenticação e controle de acesso:** utilização de sessões autenticadas com cookies HttpOnly e controle de permissões baseado em perfis (RBAC), diferenciando os acessos de Pacientes e Administradores e restringindo as operações conforme as responsabilidades de cada usuário.
 
+- **Proteção de senhas com bcrypt:** as senhas dos usuários demonstrativos são armazenadas no banco de dados na forma de hashes gerados com a biblioteca `bcrypt`, evitando o armazenamento em texto puro. Durante a autenticação, o Backend utiliza `bcrypt.compareSync()` para verificar a senha informada em relação ao hash armazenado.
+
 ### Banco de Dados
 
 - **SQLite:** banco de dados relacional utilizado para armazenar os dados demonstrativos da aplicação, incluindo usuários, solicitações de atendimento e histórico de alterações de situação. O acesso ao banco é realizado por meio da biblioteca better-sqlite3. Outras estruturas, como agendamentos completos, notificações e indicadores regionais, estão previstas para a evolução do projeto.
