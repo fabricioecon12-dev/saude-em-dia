@@ -200,3 +200,131 @@ test('Deve rejeitar cadastro de usuario sem email', () => {
 
   bancoTeste.close();
 });
+
+function criarBancoSolicitacoesTeste() {
+  const bancoTeste = new Database(':memory:');
+
+  bancoTeste.pragma('foreign_keys = ON');
+
+  bancoTeste.exec(`
+    CREATE TABLE usuarios (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      nome TEXT NOT NULL,
+      email TEXT NOT NULL UNIQUE,
+      senha_hash TEXT NOT NULL,
+      perfil TEXT NOT NULL
+        CHECK (perfil IN ('PACIENTE', 'ADMIN'))
+    );
+
+    CREATE TABLE solicitacoes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      usuario_id INTEGER NOT NULL,
+      especialidade TEXT NOT NULL,
+      data_solicitacao TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      status TEXT NOT NULL DEFAULT 'PENDENTE'
+        CHECK (status IN (
+          'PENDENTE',
+          'AGENDADA',
+          'CONCLUIDA',
+          'CANCELADA'
+        )),
+      FOREIGN KEY (usuario_id) REFERENCES usuarios(id)
+    );
+  `);
+
+  return bancoTeste;
+}
+
+// Teste 11 — Usuário inexistente
+test('Deve rejeitar solicitacao com usuario inexistente', () => {
+  const bancoTeste = criarBancoSolicitacoesTeste();
+
+  try {
+    assert.throws(() => {
+      bancoTeste.prepare(`
+        INSERT INTO solicitacoes (usuario_id, especialidade)
+        VALUES (?, ?)
+      `).run(999999, 'Cardiologia');
+    }, /FOREIGN KEY constraint failed/);
+  } finally {
+    bancoTeste.close();
+  }
+});
+
+// Teste 12 — Especialidade obrigatória
+test('Deve rejeitar solicitacao sem especialidade', () => {
+  const bancoTeste = criarBancoSolicitacoesTeste();
+
+  try {
+    assert.throws(() => {
+      bancoTeste.prepare(`
+        INSERT INTO solicitacoes (usuario_id, especialidade)
+        VALUES (?, ?)
+      `).run(1, null);
+    }, /NOT NULL constraint failed/);
+  } finally {
+    bancoTeste.close();
+  }
+});
+
+// Teste 13 — Usuário obrigatório
+test('Deve rejeitar solicitacao sem usuario', () => {
+  const bancoTeste = criarBancoSolicitacoesTeste();
+
+  try {
+    assert.throws(() => {
+      bancoTeste.prepare(`
+        INSERT INTO solicitacoes (usuario_id, especialidade)
+        VALUES (?, ?)
+      `).run(null, 'Cardiologia');
+    }, /NOT NULL constraint failed/);
+  } finally {
+    bancoTeste.close();
+  }
+});
+
+// Teste 14 — Status inválido
+test('Deve rejeitar solicitacao com status invalido', () => {
+  const bancoTeste = criarBancoSolicitacoesTeste();
+
+  try {
+    bancoTeste.prepare(`
+      INSERT INTO usuarios (nome, email, senha_hash, perfil)
+      VALUES (?, ?, ?, ?)
+    `).run('Usuario Teste', 'teste@exemplo.com', 'hash_teste', 'PACIENTE');
+
+    assert.throws(() => {
+      bancoTeste.prepare(`
+        INSERT INTO solicitacoes (usuario_id, especialidade, status)
+        VALUES (?, ?, ?)
+      `).run(1, 'Cardiologia', 'INVALIDO');
+    }, /CHECK constraint failed/);
+  } finally {
+    bancoTeste.close();
+  }
+});
+
+// Teste 15 — Status padrão
+test('Deve definir status PENDENTE automaticamente', () => {
+  const bancoTeste = criarBancoSolicitacoesTeste();
+
+  try {
+    const usuario = bancoTeste.prepare(`
+      INSERT INTO usuarios (nome, email, senha_hash, perfil)
+      VALUES (?, ?, ?, ?)
+    `).run('Usuario Teste', 'teste@exemplo.com', 'hash_teste', 'PACIENTE');
+
+    const solicitacao = bancoTeste.prepare(`
+      INSERT INTO solicitacoes (usuario_id, especialidade)
+      VALUES (?, ?)
+    `).run(usuario.lastInsertRowid, 'Cardiologia');
+
+    const resultado = bancoTeste.prepare(`
+      SELECT status FROM solicitacoes WHERE id = ?
+    `).get(solicitacao.lastInsertRowid);
+
+    assert.equal(resultado.status, 'PENDENTE');
+  } finally {
+    bancoTeste.close();
+  }
+});
