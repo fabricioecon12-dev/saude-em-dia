@@ -46,7 +46,7 @@ O **Saúde em Dia** possui finalidade exclusivamente acadêmica e demonstrativa.
 
 ### Funcionalidades do Paciente
 
-- **Acompanhamento de solicitações (implementado):** visualizar as solicitações de atendimento vinculadas ao paciente autenticado, incluindo especialidade e situação atual de cada pedido, respeitando as permissões de acesso.
+- **Cadastro de solicitações de atendimento (implementado):** permite ao paciente autenticado registrar novas solicitações de atendimento, informando a especialidade desejada. Após o cadastro, a solicitação passa a integrar sua lista de acompanhamento.
 
 - **Acompanhamento de agendamentos (parcialmente implementado):** acompanhar a situação das solicitações de atendimento, incluindo o status de agendamento. A exibição de datas, horários e unidades de saúde permanece prevista para etapas futuras.
 
