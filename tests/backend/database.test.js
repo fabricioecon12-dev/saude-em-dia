@@ -14,3 +14,13 @@ test('Deve manter a integridade referencial habilitada', () => {
 
   assert.equal(resultado, 1);
 });
+
+test('Deve verificar a existência da tabela usuarios', () => {
+  const resultado = db.prepare(`
+    SELECT name
+    FROM sqlite_master
+    WHERE type = 'table' AND name = 'usuarios'
+  `).get();
+
+  assert.equal(resultado.name, 'usuarios');
+});
