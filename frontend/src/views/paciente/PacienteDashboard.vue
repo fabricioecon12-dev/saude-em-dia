@@ -11,6 +11,9 @@ defineProps({
 const solicitacoes = ref([])
 const historicoSolicitacoes = ref({})
 const historicoAberto = ref(null)
+const novaEspecialidade = ref('')
+const mensagemCadastro = ref('')
+const erroCadastro = ref(false)
 
 function formatarDataLocal(data) {
   if (!data) return 'Não informada'
@@ -46,6 +49,34 @@ async function carregarSolicitacoes() {
     console.error('Erro ao carregar solicitações:', erro.message)
   }
 }
+async function cadastrarSolicitacao() {
+    try {
+      const resposta = await fetch('http://localhost:3000/api/paciente/solicitacoes', {
+    method: 'POST',
+    credentials: 'include',
+    headers: {
+        'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+        especialidade: novaEspecialidade.value
+    })
+})
+if (!resposta.ok) {
+    throw new Error('Não foi possível cadastrar a solicitação.')
+}
+const dados = await resposta.json()
+erroCadastro.value = false
+mensagemCadastro.value = dados.mensagem
+await carregarSolicitacoes()
+novaEspecialidade.value = ''
+
+    } catch (erro) {
+        erroCadastro.value = true
+        mensagemCadastro.value = 'Erro ao cadastrar solicitação.'
+        console.error('Erro ao cadastrar solicitação:', erro.message)
+    }
+}
+
 async function alternarHistorico(idSolicitacao) {
   if (historicoAberto.value === idSolicitacao) {
     historicoAberto.value = null
@@ -90,6 +121,31 @@ onMounted(() => {
         <h2>Bem-vindo(a), {{ usuario.nome }}!</h2>
         <p>Consulte suas informações de atendimento em um só lugar.</p>
       </section>
+      <section class="nova-solicitacao-paciente">
+    <h2>Nova Solicitação</h2>
+    <p>Solicite um atendimento selecionando a especialidade médica desejada.</p>
+    <div class="campo-especialidade">
+    <label for="especialidade">Especialidade médica</label>
+    <input
+        id="especialidade"
+        type="text"
+        v-model="novaEspecialidade"
+        placeholder="Ex.: Cardiologia"
+        required
+    />
+</div>
+<button
+    type="button"
+    class="botao-cadastrar-solicitacao"
+    @click="cadastrarSolicitacao"
+>
+    Enviar Solicitação
+</button>
+<p v-if="mensagemCadastro" :class="['mensagem-cadastro', { 'mensagem-cadastro-erro': erroCadastro }]">
+    {{ mensagemCadastro }}
+</p>
+
+</section>
       
 <section class="solicitacoes-paciente">
   <h2>Minhas Solicitações</h2>
@@ -131,6 +187,9 @@ onMounted(() => {
     — {{ formatarDataLocal(registro.data_alteracao) }}
   </li>
 </ul>
+<p v-else class="historico-vazio">
+  Nenhuma alteração de status registrada até o momento.
+</p>
 </div>
 
 </div>

@@ -126,8 +126,51 @@ app.get('/api/paciente/solicitacoes', (req, res) => {
     solicitacoes
   })
 })
+app.post('/api/paciente/solicitacoes', (req, res) => {
+    const { especialidade } = req.body;
+    const usuario = req.session.usuario;
+if (!usuario) {
+    return res.status(401).json({
+        sucesso: false,
+        mensagem: 'Usuário não autenticado.'
+    });
+}
+if (usuario.perfil !== 'PACIENTE') {
+    return res.status(403).json({
+        sucesso: false,
+        mensagem: 'Acesso permitido somente para pacientes.'
+    });
+}
+if (typeof especialidade !== 'string' || !especialidade.trim()) {
+    return res.status(400).json({
+        sucesso: false,
+        mensagem: 'Informe uma especialidade médica válida.'
+    });
+}
+const inserirSolicitacao = db.prepare(`
+    INSERT INTO solicitacoes (usuario_id, especialidade)
+    VALUES (?, ?)
+`);
+const resultado = inserirSolicitacao.run(
+    usuario.id,
+    especialidade.trim()
+);
+return res.status(201).json({
+    sucesso: true,
+    mensagem: 'Solicitação cadastrada com sucesso.',
+    solicitacao_id: resultado.lastInsertRowid
+});
+
+});
+
 app.get('/api/admin/solicitacoes/resumo', (req, res) => {
   const usuario = req.session.usuario
+  if (!usuario) {
+    return res.status(401).json({
+        sucesso: false,
+        mensagem: 'Usuário não autenticado.'
+    });
+}
 
   if (!usuario) {
     return res.status(401).json({
@@ -135,6 +178,13 @@ app.get('/api/admin/solicitacoes/resumo', (req, res) => {
       mensagem: 'Usuário não autenticado.'
     })
   }
+if (usuario.perfil !== 'PACIENTE') {
+    return res.status(403).json({
+        sucesso: false,
+        mensagem: 'Acesso permitido somente para pacientes.'
+    });
+}
+
 
   if (usuario.perfil !== 'ADMIN') {
     return res.status(403).json({
