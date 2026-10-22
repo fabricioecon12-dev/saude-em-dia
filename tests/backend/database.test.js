@@ -34,3 +34,13 @@ test('Deve verificar a existência da tabela solicitacoes', () => {
 
   assert.equal(resultado.name, 'solicitacoes');
 });
+
+test('Deve verificar a existência da tabela historico_solicitacoes', () => {
+  const resultado = db.prepare(`
+    SELECT name
+    FROM sqlite_master
+    WHERE type = 'table' AND name = 'historico_solicitacoes'
+  `).get();
+
+  assert.equal(resultado.name, 'historico_solicitacoes');
+});
