@@ -154,6 +154,13 @@ Inicie o servidor de desenvolvimento do Frontend:
 ```powershell
 npm run dev
 ```
+**Observação para usuários do Windows:** caso o PowerShell apresente uma mensagem informando que a execução de scripts está desabilitada ao utilizar comandos `npm`, é possível executar os comandos equivalentes utilizando `npm.cmd`, sem necessidade de alterar a política de execução do sistema.
+
+Por exemplo, para iniciar o Frontend:
+
+```powershell
+npm.cmd run dev
+```
 Com o Backend e o Frontend em execução, abra o navegador e acesse o endereço local padrão do Vite:
 
 ```text
