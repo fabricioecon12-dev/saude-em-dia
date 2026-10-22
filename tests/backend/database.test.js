@@ -107,3 +107,34 @@ test('Deve rejeitar cadastro de usuarios com email duplicado', () => {
 
   bancoTeste.close();
 });
+
+test('Deve rejeitar cadastro de usuario sem nome', () => {
+  const bancoTeste = new Database(':memory:');
+
+  bancoTeste.exec(`
+    CREATE TABLE usuarios (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      nome TEXT NOT NULL,
+      email TEXT NOT NULL UNIQUE,
+      senha_hash TEXT NOT NULL,
+      perfil TEXT NOT NULL
+        CHECK (perfil IN ('PACIENTE', 'ADMIN'))
+    );
+  `);
+
+  const inserirUsuario = bancoTeste.prepare(`
+    INSERT INTO usuarios (nome, email, senha_hash, perfil)
+    VALUES (?, ?, ?, ?)
+  `);
+
+  assert.throws(() => {
+    inserirUsuario.run(
+      null,
+      'teste@exemplo.com',
+      'hash_teste',
+      'PACIENTE'
+    );
+  }, /NOT NULL constraint failed/);
+
+  bancoTeste.close();
+});
