@@ -123,12 +123,12 @@ SESSION_SECRET=substitua_por_uma_chave_secreta_longa_e_aleatoria
 ```
 O arquivo `.env` contém configurações locais e informações sensíveis. Por segurança, ele não deve ser enviado ao GitHub e deve permanecer protegido pelo arquivo `.gitignore`.
 
-Inicialize as tabelas do banco de dados SQLite:
+Na primeira configuração do ambiente, inicialize as tabelas do banco de dados SQLite executando o comando abaixo. Essa etapa não precisa ser repetida a cada inicialização do servidor:
 
 ```powershell
 node initDatabase.js
 ```
-Cadastre os usuários demonstrativos necessários para testar a autenticação:
+Na preparação inicial do ambiente, execute o comando abaixo para cadastrar os usuários demonstrativos utilizados nos testes de autenticação. Não é necessário repetir essa etapa a cada inicialização do servidor:
 
 ```powershell
 node seedUsuarios.js
