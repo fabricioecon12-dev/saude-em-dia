@@ -168,6 +168,21 @@ http://localhost:5173
 ```
 
 Caso o Vite informe outra porta no terminal, utilize o endereço exibido por ele.
+#### 5.3. Compilação do Frontend
+
+Para gerar a versão de distribuição do Frontend, acesse a pasta `frontend` e execute:
+
+```powershell
+npm run build
+```
+
+No Windows, caso o PowerShell apresente restrições à execução de scripts, utilize:
+
+```powershell
+npm.cmd run build
+```
+
+Após a compilação bem-sucedida, o Vite gera os arquivos de distribuição na pasta `frontend/dist`.
 
 ## 6. Aviso Demonstrativo e Limitações
 
