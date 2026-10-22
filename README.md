@@ -98,7 +98,7 @@ O Saúde em Dia foi planejado como uma aplicação web com arquitetura cliente-s
 ### Banco de Dados
 
 - **SQLite:** banco de dados relacional utilizado para armazenar os dados demonstrativos da aplicação, incluindo usuários, solicitações de atendimento e histórico de alterações de situação. O acesso ao banco é realizado por meio da biblioteca better-sqlite3. Outras estruturas, como agendamentos completos, notificações e indicadores regionais, estão previstas para a evolução do projeto.
-- **Modelagem relacional e integridade dos dados:** o banco de dados implementado possui três tabelas principais: usuarios, solicitacoes e historico_solicitacoes. A estrutura utiliza chaves primárias, chaves estrangeiras e restrições de integridade para organizar os dados e preservar os relacionamentos entre usuários, solicitações e seus históricos. A ampliação da modelagem para outras entidades está prevista para etapas futuras.
+- **Modelagem relacional e integridade dos dados:** o banco de dados implementado possui três tabelas principais: `usuarios`, `solicitacoes` e `historico_solicitacoes`. A estrutura utiliza chaves primárias, chaves estrangeiras e restrições de integridade para organizar os dados e preservar os relacionamentos entre usuários, solicitações e seus históricos. A verificação das chaves estrangeiras está explicitamente habilitada na conexão SQLite por meio da configuração `PRAGMA foreign_keys = ON`, aplicada pela biblioteca `better-sqlite3`. A ampliação da modelagem para outras entidades está prevista para etapas futuras.
 
 ## 5. Como Executar
 
