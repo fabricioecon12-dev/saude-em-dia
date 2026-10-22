@@ -24,3 +24,13 @@ test('Deve verificar a existência da tabela usuarios', () => {
 
   assert.equal(resultado.name, 'usuarios');
 });
+
+test('Deve verificar a existência da tabela solicitacoes', () => {
+  const resultado = db.prepare(`
+    SELECT name
+    FROM sqlite_master
+    WHERE type = 'table' AND name = 'solicitacoes'
+  `).get();
+
+  assert.equal(resultado.name, 'solicitacoes');
+});
