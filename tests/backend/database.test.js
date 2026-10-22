@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const db = require('../../backend/config/database');
+const Database = db.constructor;
 
 test('Deve estabelecer conexão com o banco SQLite', () => {
   const resultado = db.prepare('SELECT 1 AS conectado').get();
@@ -43,4 +44,28 @@ test('Deve verificar a existência da tabela historico_solicitacoes', () => {
   `).get();
 
   assert.equal(resultado.name, 'historico_solicitacoes');
+});
+
+test('Deve rejeitar perfil de usuário inválido', () => {
+  const bancoTeste = new Database(':memory:');
+
+  bancoTeste.exec(`
+    CREATE TABLE usuarios (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      nome TEXT NOT NULL,
+      email TEXT NOT NULL UNIQUE,
+      senha_hash TEXT NOT NULL,
+      perfil TEXT NOT NULL
+        CHECK (perfil IN ('PACIENTE', 'ADMIN'))
+    );
+  `);
+
+  assert.throws(() => {
+    bancoTeste.prepare(`
+      INSERT INTO usuarios (nome, email, senha_hash, perfil)
+      VALUES (?, ?, ?, ?)
+    `).run('Teste', 'teste@exemplo.com', 'hash_teste', 'INVALIDO');
+  }, /CHECK constraint failed/);
+
+  bancoTeste.close();
 });
