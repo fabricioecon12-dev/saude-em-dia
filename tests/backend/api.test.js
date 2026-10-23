@@ -30,6 +30,26 @@ function removerUsuarioTeste(id) {
   db.prepare('DELETE FROM usuarios WHERE id = ?').run(id);
 }
 
+function removerSolicitacoesTeste(usuarioId) {
+  const solicitacoes = db.prepare(`
+    SELECT id
+    FROM solicitacoes
+    WHERE usuario_id = ?
+  `).all(usuarioId);
+
+  for (const solicitacao of solicitacoes) {
+    db.prepare(`
+      DELETE FROM historico_solicitacoes
+      WHERE solicitacao_id = ?
+    `).run(solicitacao.id);
+  }
+
+  db.prepare(`
+    DELETE FROM solicitacoes
+    WHERE usuario_id = ?
+  `).run(usuarioId);
+}
+
 before(async () => {
   servidor = app.listen(0);
 
@@ -1152,6 +1172,302 @@ test('Deve rejeitar especialidade booleana de paciente autenticado', async () =>
     );
 
   } finally {
+    removerUsuarioTeste(usuario.id);
+  }
+});
+
+// Teste 66 — Cadastrar solicitação médica válida
+test('Deve cadastrar solicitacao medica de paciente autenticado', async () => {
+  const usuario = criarUsuarioTeste('PACIENTE');
+
+  try {
+    const login = await fetch(`${urlBase}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: usuario.email,
+        senha: usuario.senha
+      })
+    });
+
+    assert.equal(login.status, 200);
+
+    const cookie = login.headers.get('set-cookie');
+    assert.ok(cookie?.includes('saude.sid='));
+
+    const resposta = await fetch(
+      `${urlBase}/api/paciente/solicitacoes`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Cookie: cookie.split(';')[0]
+        },
+        body: JSON.stringify({
+          especialidade: 'Cardiologia'
+        })
+      }
+    );
+
+    const dados = await resposta.json();
+
+    assert.equal(resposta.status, 201);
+    assert.equal(dados.sucesso, true);
+    assert.equal(
+      dados.mensagem,
+      'Solicitação cadastrada com sucesso.'
+    );
+    assert.ok(Number.isSafeInteger(dados.solicitacao_id));
+
+    const solicitacao = db.prepare(`
+      SELECT usuario_id, especialidade, status
+      FROM solicitacoes
+      WHERE id = ?
+    `).get(dados.solicitacao_id);
+
+    assert.ok(solicitacao);
+    assert.equal(solicitacao.usuario_id, usuario.id);
+    assert.equal(solicitacao.especialidade, 'Cardiologia');
+    assert.equal(solicitacao.status, 'PENDENTE');
+
+  } finally {
+    removerSolicitacoesTeste(usuario.id);
+    removerUsuarioTeste(usuario.id);
+  }
+});
+
+// Teste 67 — Consultar solicitação cadastrada
+test('Deve listar solicitacao cadastrada pelo paciente autenticado', async () => {
+  const usuario = criarUsuarioTeste('PACIENTE');
+
+  try {
+    const login = await fetch(`${urlBase}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: usuario.email,
+        senha: usuario.senha
+      })
+    });
+
+    assert.equal(login.status, 200);
+
+    const cookie = login.headers.get('set-cookie');
+    assert.ok(cookie?.includes('saude.sid='));
+
+    const criar = await fetch(`${urlBase}/api/paciente/solicitacoes`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Cookie: cookie.split(';')[0]
+      },
+      body: JSON.stringify({
+        especialidade: 'Neurologia'
+      })
+    });
+
+    assert.equal(criar.status, 201);
+
+    const dadosCriacao = await criar.json();
+
+    const resposta = await fetch(
+      `${urlBase}/api/paciente/solicitacoes`,
+      {
+        headers: {
+          Cookie: cookie.split(';')[0]
+        }
+      }
+    );
+
+    const dados = await resposta.json();
+
+    assert.equal(resposta.status, 200);
+    assert.equal(dados.sucesso, true);
+    assert.ok(Array.isArray(dados.solicitacoes));
+
+    const solicitacao = dados.solicitacoes.find(
+      (item) => item.id === dadosCriacao.solicitacao_id
+    );
+
+    assert.ok(solicitacao);
+    assert.equal(solicitacao.especialidade, 'Neurologia');
+    assert.equal(solicitacao.status, 'PENDENTE');
+
+  } finally {
+    removerSolicitacoesTeste(usuario.id);
+    removerUsuarioTeste(usuario.id);
+  }
+});
+
+// Teste 68 — Remover espaços extras da especialidade
+test('Deve remover espacos extras da especialidade cadastrada', async () => {
+  const usuario = criarUsuarioTeste('PACIENTE');
+
+  try {
+    const login = await fetch(`${urlBase}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: usuario.email,
+        senha: usuario.senha
+      })
+    });
+
+    assert.equal(login.status, 200);
+
+    const cookie = login.headers.get('set-cookie');
+    assert.ok(cookie?.includes('saude.sid='));
+
+    const resposta = await fetch(
+      `${urlBase}/api/paciente/solicitacoes`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Cookie: cookie.split(';')[0]
+        },
+        body: JSON.stringify({
+          especialidade: '   Ortopedia   '
+        })
+      }
+    );
+
+    const dados = await resposta.json();
+
+    assert.equal(resposta.status, 201);
+    assert.equal(dados.sucesso, true);
+
+    const solicitacao = db.prepare(`
+      SELECT especialidade, status
+      FROM solicitacoes
+      WHERE id = ?
+    `).get(dados.solicitacao_id);
+
+    assert.ok(solicitacao);
+    assert.equal(solicitacao.especialidade, 'Ortopedia');
+    assert.equal(solicitacao.status, 'PENDENTE');
+
+  } finally {
+    removerSolicitacoesTeste(usuario.id);
+    removerUsuarioTeste(usuario.id);
+  }
+});
+
+// Teste 69 — Isolamento das solicitações entre pacientes
+test('Nao deve listar solicitacoes pertencentes a outro paciente', async () => {
+  const pacienteA = criarUsuarioTeste('PACIENTE');
+  const pacienteB = criarUsuarioTeste('PACIENTE');
+
+  try {
+    const loginA = await fetch(`${urlBase}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: pacienteA.email,
+        senha: pacienteA.senha
+      })
+    });
+
+    assert.equal(loginA.status, 200);
+
+    const cookieA = loginA.headers.get('set-cookie');
+    assert.ok(cookieA?.includes('saude.sid='));
+
+    const criacao = await fetch(`${urlBase}/api/paciente/solicitacoes`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Cookie: cookieA.split(';')[0]
+      },
+      body: JSON.stringify({
+        especialidade: 'Dermatologia'
+      })
+    });
+
+    assert.equal(criacao.status, 201);
+
+    const dadosCriacao = await criacao.json();
+
+    const loginB = await fetch(`${urlBase}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: pacienteB.email,
+        senha: pacienteB.senha
+      })
+    });
+
+    assert.equal(loginB.status, 200);
+
+    const cookieB = loginB.headers.get('set-cookie');
+    assert.ok(cookieB?.includes('saude.sid='));
+
+    const resposta = await fetch(`${urlBase}/api/paciente/solicitacoes`, {
+      headers: {
+        Cookie: cookieB.split(';')[0]
+      }
+    });
+
+    const dados = await resposta.json();
+
+    assert.equal(resposta.status, 200);
+    assert.equal(dados.sucesso, true);
+    assert.ok(Array.isArray(dados.solicitacoes));
+
+    const solicitacaoDeOutroPaciente = dados.solicitacoes.find(
+      (item) => item.id === dadosCriacao.solicitacao_id
+    );
+
+    assert.equal(solicitacaoDeOutroPaciente, undefined);
+
+  } finally {
+    removerSolicitacoesTeste(pacienteA.id);
+    removerSolicitacoesTeste(pacienteB.id);
+    removerUsuarioTeste(pacienteA.id);
+    removerUsuarioTeste(pacienteB.id);
+  }
+});
+
+// Teste 70 — Consultar solicitações de paciente sem registros
+test('Deve retornar lista vazia para paciente sem solicitacoes', async () => {
+  const usuario = criarUsuarioTeste('PACIENTE');
+
+  try {
+    const login = await fetch(`${urlBase}/api/auth/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        email: usuario.email,
+        senha: usuario.senha
+      })
+    });
+
+    assert.equal(login.status, 200);
+
+    const cookie = login.headers.get('set-cookie');
+    assert.ok(cookie?.includes('saude.sid='));
+
+    const resposta = await fetch(
+      `${urlBase}/api/paciente/solicitacoes`,
+      {
+        method: 'GET',
+        headers: {
+          Cookie: cookie.split(';')[0]
+        }
+      }
+    );
+
+    const dados = await resposta.json();
+
+    assert.equal(resposta.status, 200);
+    assert.equal(dados.sucesso, true);
+    assert.ok(Array.isArray(dados.solicitacoes));
+    assert.equal(dados.solicitacoes.length, 0);
+
+  } finally {
+    removerSolicitacoesTeste(usuario.id);
     removerUsuarioTeste(usuario.id);
   }
 });
