@@ -2317,3 +2317,287 @@ test('Deve permitir paciente consultar seu proprio historico', async () => {
     removerUsuarioTeste(paciente.id);
   }
 });
+
+// Teste 86 — Impedir acesso após logout
+test('Deve impedir acesso a rota protegida apos logout', async () => {
+  const paciente = criarUsuarioTeste('PACIENTE');
+
+  try {
+    // Autenticar o paciente
+    const login = await fetch(`${urlBase}/api/auth/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        email: paciente.email,
+        senha: paciente.senha
+      })
+    });
+
+    assert.equal(login.status, 200);
+
+    const cookie = login.headers.get('set-cookie');
+    assert.ok(cookie?.includes('saude.sid='));
+
+    const cookieSessao = cookie.split(';')[0];
+
+    // Encerrar a sessão
+    const logout = await fetch(`${urlBase}/api/auth/logout`, {
+      method: 'POST',
+      headers: {
+        Cookie: cookieSessao
+      }
+    });
+
+    assert.equal(logout.status, 200);
+
+    // Tentar reutilizar a sessão encerrada
+    const resposta = await fetch(
+      `${urlBase}/api/paciente/solicitacoes`,
+      {
+        method: 'GET',
+        headers: {
+          Cookie: cookieSessao
+        }
+      }
+    );
+
+    const dados = await resposta.json();
+
+    assert.equal(resposta.status, 401);
+    assert.equal(dados.sucesso, false);
+    assert.equal(
+      dados.mensagem,
+      'Usuário não autenticado.'
+    );
+
+  } finally {
+    removerUsuarioTeste(paciente.id);
+  }
+});
+
+// Teste 87 — Impedir acesso administrativo após logout
+test('Deve impedir acesso administrativo apos logout', async () => {
+  const administrador = criarUsuarioTeste('ADMIN');
+
+  try {
+    // Autenticar o administrador
+    const login = await fetch(`${urlBase}/api/auth/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        email: administrador.email,
+        senha: administrador.senha
+      })
+    });
+
+    assert.equal(login.status, 200);
+
+    const cookie = login.headers.get('set-cookie');
+    assert.ok(cookie?.includes('saude.sid='));
+
+    const cookieSessao = cookie.split(';')[0];
+
+    // Encerrar a sessão administrativa
+    const logout = await fetch(`${urlBase}/api/auth/logout`, {
+      method: 'POST',
+      headers: {
+        Cookie: cookieSessao
+      }
+    });
+
+    assert.equal(logout.status, 200);
+
+    // Tentar acessar a área administrativa com a sessão encerrada
+    const resposta = await fetch(
+      `${urlBase}/api/admin/solicitacoes`,
+      {
+        method: 'GET',
+        headers: {
+          Cookie: cookieSessao
+        }
+      }
+    );
+
+    const dados = await resposta.json();
+
+    assert.equal(resposta.status, 401);
+    assert.equal(dados.sucesso, false);
+    assert.equal(
+      dados.mensagem,
+      'Usuário não autenticado.'
+    );
+
+  } finally {
+    removerUsuarioTeste(administrador.id);
+  }
+});
+
+// Teste 88 — Impedir acesso com cookie de sessão inválido
+test('Deve impedir acesso com cookie de sessao invalido', async () => {
+  // Simular um cookie de sessão inválido
+  const cookieInvalido = 'saude.sid=sessao-invalida-123456';
+
+  // Tentar acessar uma rota protegida
+  const resposta = await fetch(
+    `${urlBase}/api/paciente/solicitacoes`,
+    {
+      method: 'GET',
+      headers: {
+        Cookie: cookieInvalido
+      }
+    }
+  );
+
+  const dados = await resposta.json();
+
+  assert.equal(resposta.status, 401);
+  assert.equal(dados.sucesso, false);
+  assert.equal(
+    dados.mensagem,
+    'Usuário não autenticado.'
+  );
+});
+
+// Teste 89 — Impedir acesso com cookie de sessão adulterado
+test('Deve impedir acesso com cookie de sessao adulterado', async () => {
+  const paciente = criarUsuarioTeste('PACIENTE');
+
+  try {
+    // Autenticar o paciente
+    const login = await fetch(`${urlBase}/api/auth/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        email: paciente.email,
+        senha: paciente.senha
+      })
+    });
+
+    assert.equal(login.status, 200);
+
+    const cookie = login.headers.get('set-cookie');
+    assert.ok(cookie?.includes('saude.sid='));
+
+    const cookieSessao = cookie.split(';')[0];
+
+    // Alterar um caractere da assinatura do cookie
+    const ultimoCaractere = cookieSessao.slice(-1);
+    const substituto = ultimoCaractere === 'a' ? 'b' : 'a';
+
+    const cookieAdulterado =
+      cookieSessao.slice(0, -1) + substituto;
+
+    assert.notEqual(cookieAdulterado, cookieSessao);
+
+    // Tentar acessar uma rota protegida
+    const resposta = await fetch(
+      `${urlBase}/api/paciente/solicitacoes`,
+      {
+        method: 'GET',
+        headers: {
+          Cookie: cookieAdulterado
+        }
+      }
+    );
+
+    const dados = await resposta.json();
+
+    assert.equal(resposta.status, 401);
+    assert.equal(dados.sucesso, false);
+    assert.equal(
+      dados.mensagem,
+      'Usuário não autenticado.'
+    );
+
+  } finally {
+    removerUsuarioTeste(paciente.id);
+  }
+});
+
+// Teste 90 — Impedir reutilização de sessão antiga após novo login
+test('Deve manter sessao antiga invalida apos novo login', async () => {
+  const paciente = criarUsuarioTeste('PACIENTE');
+
+  try {
+    // Primeiro login
+    const primeiroLogin = await fetch(`${urlBase}/api/auth/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        email: paciente.email,
+        senha: paciente.senha
+      })
+    });
+
+    assert.equal(primeiroLogin.status, 200);
+
+    const primeiroCookie = primeiroLogin.headers.get('set-cookie');
+    assert.ok(primeiroCookie?.includes('saude.sid='));
+
+    const sessaoAntiga = primeiroCookie.split(';')[0];
+
+    // Encerrar a primeira sessão
+    const logout = await fetch(`${urlBase}/api/auth/logout`, {
+      method: 'POST',
+      headers: {
+        Cookie: sessaoAntiga
+      }
+    });
+
+    assert.equal(logout.status, 200);
+
+    // Realizar novo login
+    const segundoLogin = await fetch(`${urlBase}/api/auth/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        email: paciente.email,
+        senha: paciente.senha
+      })
+    });
+
+    assert.equal(segundoLogin.status, 200);
+
+    const segundoCookie = segundoLogin.headers.get('set-cookie');
+    assert.ok(segundoCookie?.includes('saude.sid='));
+
+    const sessaoNova = segundoCookie.split(';')[0];
+
+    // A sessão antiga deve continuar inválida
+    const acessoAntigo = await fetch(
+      `${urlBase}/api/paciente/solicitacoes`,
+      {
+        headers: {
+          Cookie: sessaoAntiga
+        }
+      }
+    );
+
+    assert.equal(acessoAntigo.status, 401);
+
+    // A nova sessão deve funcionar
+    const acessoNovo = await fetch(
+      `${urlBase}/api/paciente/solicitacoes`,
+      {
+        headers: {
+          Cookie: sessaoNova
+        }
+      }
+    );
+
+    assert.equal(acessoNovo.status, 200);
+
+  } finally {
+    removerUsuarioTeste(paciente.id);
+  }
+});
