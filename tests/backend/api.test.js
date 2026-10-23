@@ -4206,3 +4206,306 @@ test('Deve atualizar resumo administrativo apos mudar status', async () => {
     removerUsuarioTeste(administrador.id);
   }
 });
+
+// Teste 121 — Rejeitar email enviado como objeto JSON
+test('Deve rejeitar email enviado como objeto JSON', async () => {
+  const resposta = await fetch(`${urlBase}/api/auth/login`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      email: {
+        valor: 'teste@exemplo.com'
+      },
+      senha: 'SenhaTeste123!'
+    })
+  });
+
+  const dados = await resposta.json();
+
+  assert.equal(resposta.status, 400);
+  assert.equal(dados.sucesso, false);
+  assert.equal(
+    dados.mensagem,
+    'E-mail e senha são obrigatórios.'
+  );
+
+  // Verificar que nenhuma sessão autenticada foi criada
+  const cookie = resposta.headers.get('set-cookie');
+
+  if (cookie) {
+    const verificacao = await fetch(`${urlBase}/api/auth/me`, {
+      headers: {
+        Cookie: cookie.split(';')[0]
+      }
+    });
+
+    assert.equal(verificacao.status, 401);
+  }
+});
+
+// Teste 122 — Rejeitar senha enviada como numero
+test('Deve rejeitar senha enviada como numero', async () => {
+  const usuario = criarUsuarioTeste('PACIENTE');
+
+  try {
+    const resposta = await fetch(`${urlBase}/api/auth/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        email: usuario.email,
+        senha: 123456
+      })
+    });
+
+    const dados = await resposta.json();
+
+    assert.equal(resposta.status, 400);
+    assert.equal(dados.sucesso, false);
+    assert.equal(
+      dados.mensagem,
+      'E-mail e senha são obrigatórios.'
+    );
+
+    // Confirmar que a tentativa não criou sessão autenticada
+    const cookie = resposta.headers.get('set-cookie');
+
+    if (cookie) {
+      const verificacao = await fetch(`${urlBase}/api/auth/me`, {
+        headers: {
+          Cookie: cookie.split(';')[0]
+        }
+      });
+
+      assert.equal(verificacao.status, 401);
+    }
+
+  } finally {
+    removerUsuarioTeste(usuario.id);
+  }
+});
+
+// Teste 123 — Rejeitar especialidade enviada como objeto JSON
+test('Deve rejeitar especialidade enviada como objeto JSON', async () => {
+  const paciente = criarUsuarioTeste('PACIENTE');
+
+  try {
+    // Autenticar o paciente
+    const login = await fetch(`${urlBase}/api/auth/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        email: paciente.email,
+        senha: paciente.senha
+      })
+    });
+
+    assert.equal(login.status, 200);
+
+    const cookie = login.headers.get('set-cookie');
+    assert.ok(cookie?.includes('saude.sid='));
+
+    // Consultar quantidade inicial de solicitacoes
+    const antes = db.prepare(`
+      SELECT COUNT(*) AS total
+      FROM solicitacoes
+      WHERE usuario_id = ?
+    `).get(paciente.id);
+
+    // Enviar especialidade com tipo de dado invalido
+    const resposta = await fetch(
+      `${urlBase}/api/paciente/solicitacoes`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Cookie: cookie.split(';')[0]
+        },
+        body: JSON.stringify({
+          especialidade: {
+            nome: 'Cardiologia'
+          }
+        })
+      }
+    );
+
+    const dados = await resposta.json();
+
+    assert.equal(resposta.status, 400);
+    assert.equal(dados.sucesso, false);
+    assert.equal(
+      dados.mensagem,
+      'Informe uma especialidade médica válida.'
+    );
+
+    // Confirmar que nenhuma solicitacao foi criada
+    const depois = db.prepare(`
+      SELECT COUNT(*) AS total
+      FROM solicitacoes
+      WHERE usuario_id = ?
+    `).get(paciente.id);
+
+    assert.equal(depois.total, antes.total);
+
+  } finally {
+    removerSolicitacoesTeste(paciente.id);
+    removerUsuarioTeste(paciente.id);
+  }
+});
+
+// Teste 124 — Rejeitar status enviado como objeto JSON
+test('Deve rejeitar status enviado como objeto JSON', async () => {
+  const administrador = criarUsuarioTeste('ADMIN');
+  const paciente = criarUsuarioTeste('PACIENTE');
+
+  try {
+    // Criar uma solicitacao pendente
+    const resultado = db.prepare(`
+      INSERT INTO solicitacoes (usuario_id, especialidade)
+      VALUES (?, ?)
+    `).run(paciente.id, 'Cardiologia');
+
+    const solicitacaoId = Number(resultado.lastInsertRowid);
+
+    // Autenticar o administrador
+    const login = await fetch(`${urlBase}/api/auth/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        email: administrador.email,
+        senha: administrador.senha
+      })
+    });
+
+    assert.equal(login.status, 200);
+
+    const cookie = login.headers.get('set-cookie');
+    assert.ok(cookie?.includes('saude.sid='));
+
+    // Tentar atualizar o status com um objeto JSON
+    const resposta = await fetch(
+      `${urlBase}/api/admin/solicitacoes/${solicitacaoId}/status`,
+      {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Cookie: cookie.split(';')[0]
+        },
+        body: JSON.stringify({
+          status: {
+            valor: 'AGENDADA'
+          }
+        })
+      }
+    );
+
+    const dados = await resposta.json();
+
+    assert.equal(resposta.status, 400);
+    assert.equal(dados.sucesso, false);
+
+    // Confirmar que o status original foi preservado
+    const solicitacao = db.prepare(`
+      SELECT status
+      FROM solicitacoes
+      WHERE id = ?
+    `).get(solicitacaoId);
+
+    assert.equal(solicitacao.status, 'PENDENTE');
+
+    // Confirmar que o historico nao foi alterado
+    const historico = db.prepare(`
+      SELECT COUNT(*) AS total
+      FROM historico_solicitacoes
+      WHERE solicitacao_id = ?
+    `).get(solicitacaoId);
+
+    assert.equal(historico.total, 0);
+
+  } finally {
+    removerSolicitacoesTeste(paciente.id);
+    removerUsuarioTeste(paciente.id);
+    removerUsuarioTeste(administrador.id);
+  }
+});
+
+// Teste 125 — Preservar sessao apos requisicao invalida
+test('Deve preservar sessao apos requisicao invalida', async () => {
+  const paciente = criarUsuarioTeste('PACIENTE');
+
+  try {
+    // Autenticar o paciente
+    const login = await fetch(`${urlBase}/api/auth/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        email: paciente.email,
+        senha: paciente.senha
+      })
+    });
+
+    assert.equal(login.status, 200);
+
+    const cookie = login.headers.get('set-cookie');
+    assert.ok(cookie?.includes('saude.sid='));
+
+    const cookieSessao = cookie.split(';')[0];
+
+    // Enviar uma solicitacao com especialidade invalida
+    const resposta = await fetch(
+      `${urlBase}/api/paciente/solicitacoes`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Cookie: cookieSessao
+        },
+        body: JSON.stringify({
+          especialidade: 123456
+        })
+      }
+    );
+
+    const dados = await resposta.json();
+
+    assert.equal(resposta.status, 400);
+    assert.equal(dados.sucesso, false);
+
+    // Verificar se a sessao continua autenticada
+    const verificacao = await fetch(`${urlBase}/api/auth/me`, {
+      headers: {
+        Cookie: cookieSessao
+      }
+    });
+
+    assert.equal(verificacao.status, 200);
+
+    const dadosSessao = await verificacao.json();
+
+    assert.equal(dadosSessao.sucesso, true);
+    assert.equal(dadosSessao.usuario.id, paciente.id);
+    assert.equal(dadosSessao.usuario.perfil, 'PACIENTE');
+
+    // Confirmar que nenhuma solicitacao foi criada
+    const total = db.prepare(`
+      SELECT COUNT(*) AS total
+      FROM solicitacoes
+      WHERE usuario_id = ?
+    `).get(paciente.id);
+
+    assert.equal(total.total, 0);
+
+  } finally {
+    removerSolicitacoesTeste(paciente.id);
+    removerUsuarioTeste(paciente.id);
+  }
+});
