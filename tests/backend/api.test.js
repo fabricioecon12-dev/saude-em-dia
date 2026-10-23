@@ -240,3 +240,89 @@ test('Deve rejeitar consulta de usuario sem autenticacao', async () => {
   assert.equal(resposta.status, 401);
   assert.equal(dados.sucesso, false);
 });
+
+// Teste 36 — Usuário inexistente
+test('Deve rejeitar login com usuario inexistente', async () => {
+  const resposta = await fetch(`${urlBase}/api/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      email: 'usuario-inexistente-36@exemplo.invalid',
+      senha: 'senha-incorreta'
+    })
+  });
+
+  const dados = await resposta.json();
+
+  assert.equal(resposta.status, 401);
+  assert.equal(dados.sucesso, false);
+  assert.equal(dados.mensagem, 'E-mail ou senha incorretos.');
+});
+
+// Teste 37 — E-mail com espaços
+test('Deve rejeitar login com email contendo apenas espacos', async () => {
+  const resposta = await fetch(`${urlBase}/api/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      email: '   ',
+      senha: 'senha_teste'
+    })
+  });
+
+  const dados = await resposta.json();
+
+  assert.equal(resposta.status, 400);
+  assert.equal(dados.sucesso, false);
+});
+
+// Teste 38 — Senha com espaços
+test('Deve rejeitar login com senha contendo apenas espacos', async () => {
+  const resposta = await fetch(`${urlBase}/api/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      email: 'teste@exemplo.com',
+      senha: '   '
+    })
+  });
+
+  const dados = await resposta.json();
+
+  assert.equal(resposta.status, 400);
+  assert.equal(dados.sucesso, false);
+});
+
+// Teste 39 — E-mail sem arroba
+test('Deve rejeitar login com email sem arroba', async () => {
+  const resposta = await fetch(`${urlBase}/api/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      email: 'usuario.exemplo.com',
+      senha: 'senha_teste'
+    })
+  });
+
+  const dados = await resposta.json();
+
+  assert.equal(resposta.status, 400);
+  assert.equal(dados.sucesso, false);
+});
+
+// Teste 40 — E-mail sem domínio
+test('Deve rejeitar login com email sem dominio', async () => {
+  const resposta = await fetch(`${urlBase}/api/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      email: 'usuario@',
+      senha: 'senha_teste'
+    })
+  });
+
+  const dados = await resposta.json();
+
+  assert.equal(resposta.status, 400);
+  assert.equal(dados.sucesso, false);
+});
