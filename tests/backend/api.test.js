@@ -3587,3 +3587,345 @@ test('Deve verificar comportamento da sessao apos alteracao da senha', async () 
     removerUsuarioTeste(usuario.id);
   }
 });
+
+// Teste 111 — Verificar SQL injection com formato de e-mail válido
+test('Deve rejeitar injecao SQL em email com formato valido', async () => {
+  const usuario = criarUsuarioTeste('PACIENTE');
+
+  try {
+    // Entrada com caracteres SQL e formato aceito pela validação básica
+    const emailMalicioso = "'OR'1'='1'--@exemplo.com";
+
+    const resposta = await fetch(`${urlBase}/api/auth/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        email: emailMalicioso,
+        senha: usuario.senha
+      })
+    });
+
+    const dados = await resposta.json();
+
+    // A entrada deve chegar à consulta, mas não autenticar
+    assert.equal(resposta.status, 401);
+    assert.equal(dados.sucesso, false);
+    assert.equal(dados.mensagem, 'E-mail ou senha incorretos.');
+
+    // Confirmar que nenhuma sessão autenticada foi criada
+    const cookie = resposta.headers.get('set-cookie');
+
+    if (cookie) {
+      const verificacao = await fetch(`${urlBase}/api/auth/me`, {
+        headers: {
+          Cookie: cookie.split(';')[0]
+        }
+      });
+
+      assert.equal(verificacao.status, 401);
+    }
+
+    // Confirmar que o usuário original permanece no banco
+    const usuarioPreservado = db.prepare(`
+      SELECT id
+      FROM usuarios
+      WHERE id = ?
+    `).get(usuario.id);
+
+    assert.ok(usuarioPreservado);
+
+  } finally {
+    removerUsuarioTeste(usuario.id);
+  }
+});
+
+// Teste 112 — Impedir acesso administrativo após logout
+test('Deve bloquear acesso administrativo apos encerramento da sessao', async () => {
+  const administrador = criarUsuarioTeste('ADMIN');
+
+  try {
+    // Autenticar o administrador
+    const login = await fetch(`${urlBase}/api/auth/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        email: administrador.email,
+        senha: administrador.senha
+      })
+    });
+
+    assert.equal(login.status, 200);
+
+    const cookie = login.headers.get('set-cookie');
+    assert.ok(cookie?.includes('saude.sid='));
+
+    const cookieSessao = cookie.split(';')[0];
+
+    // Confirmar acesso administrativo antes do logout
+    const acessoInicial = await fetch(
+      `${urlBase}/api/admin/solicitacoes`,
+      {
+        headers: {
+          Cookie: cookieSessao
+        }
+      }
+    );
+
+    assert.equal(acessoInicial.status, 200);
+
+    // Encerrar a sessão
+    const logout = await fetch(`${urlBase}/api/auth/logout`, {
+      method: 'POST',
+      headers: {
+        Cookie: cookieSessao
+      }
+    });
+
+    assert.equal(logout.status, 200);
+
+    // Tentar reutilizar a sessão encerrada
+    const acessoPosterior = await fetch(
+      `${urlBase}/api/admin/solicitacoes`,
+      {
+        headers: {
+          Cookie: cookieSessao
+        }
+      }
+    );
+
+    const dados = await acessoPosterior.json();
+
+    assert.equal(acessoPosterior.status, 401);
+    assert.equal(dados.sucesso, false);
+    assert.equal(dados.mensagem, 'Usuário não autenticado.');
+
+  } finally {
+    removerUsuarioTeste(administrador.id);
+  }
+});
+
+// Teste 113 — Verificar isolamento entre sessões de usuários
+test('Deve manter sessao de outro paciente ativa apos logout', async () => {
+  const pacienteA = criarUsuarioTeste('PACIENTE');
+  const pacienteB = criarUsuarioTeste('PACIENTE');
+
+  try {
+    async function autenticar(paciente) {
+      const resposta = await fetch(`${urlBase}/api/auth/login`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          email: paciente.email,
+          senha: paciente.senha
+        })
+      });
+
+      assert.equal(resposta.status, 200);
+
+      const cookie = resposta.headers.get('set-cookie');
+      assert.ok(cookie?.includes('saude.sid='));
+
+      return cookie.split(';')[0];
+    }
+
+    // Criar duas sessões independentes
+    const cookieA = await autenticar(pacienteA);
+    const cookieB = await autenticar(pacienteB);
+
+    assert.notEqual(cookieA, cookieB);
+
+    // Confirmar que ambas estão autenticadas
+    for (const cookie of [cookieA, cookieB]) {
+      const resposta = await fetch(`${urlBase}/api/auth/me`, {
+        headers: { Cookie: cookie }
+      });
+
+      assert.equal(resposta.status, 200);
+    }
+
+    // Encerrar somente a sessão do paciente A
+    const logoutA = await fetch(`${urlBase}/api/auth/logout`, {
+      method: 'POST',
+      headers: {
+        Cookie: cookieA
+      }
+    });
+
+    assert.equal(logoutA.status, 200);
+
+    // A sessão do paciente A deve estar invalidada
+    const verificacaoA = await fetch(`${urlBase}/api/auth/me`, {
+      headers: {
+        Cookie: cookieA
+      }
+    });
+
+    assert.equal(verificacaoA.status, 401);
+
+    // A sessão do paciente B deve continuar ativa
+    const verificacaoB = await fetch(`${urlBase}/api/auth/me`, {
+      headers: {
+        Cookie: cookieB
+      }
+    });
+
+    assert.equal(verificacaoB.status, 200);
+
+    const dadosB = await verificacaoB.json();
+
+    assert.equal(dadosB.sucesso, true);
+    assert.equal(dadosB.usuario.id, pacienteB.id);
+
+  } finally {
+    removerUsuarioTeste(pacienteA.id);
+    removerUsuarioTeste(pacienteB.id);
+  }
+});
+
+// Teste 114 — Impedir alteração indevida do perfil
+test('Deve impedir elevacao de privilegios pelo corpo do login', async () => {
+  const paciente = criarUsuarioTeste('PACIENTE');
+
+  try {
+    // Tentar informar um perfil administrativo durante o login
+    const login = await fetch(`${urlBase}/api/auth/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        email: paciente.email,
+        senha: paciente.senha,
+        perfil: 'ADMIN'
+      })
+    });
+
+    assert.equal(login.status, 200);
+
+    const dadosLogin = await login.json();
+
+    // O perfil deve continuar sendo o registrado no banco
+    assert.equal(dadosLogin.sucesso, true);
+    assert.equal(dadosLogin.usuario.perfil, 'PACIENTE');
+
+    const cookie = login.headers.get('set-cookie');
+    assert.ok(cookie?.includes('saude.sid='));
+
+    const cookieSessao = cookie.split(';')[0];
+
+    // Confirmar que a sessão mantém o perfil correto
+    const verificacao = await fetch(`${urlBase}/api/auth/me`, {
+      headers: {
+        Cookie: cookieSessao
+      }
+    });
+
+    assert.equal(verificacao.status, 200);
+
+    const dadosSessao = await verificacao.json();
+    assert.equal(dadosSessao.usuario.perfil, 'PACIENTE');
+
+    // Tentar acessar uma rota exclusiva do administrador
+    const acessoAdmin = await fetch(
+      `${urlBase}/api/admin/solicitacoes`,
+      {
+        headers: {
+          Cookie: cookieSessao
+        }
+      }
+    );
+
+    assert.equal(acessoAdmin.status, 403);
+
+    // Confirmar que o perfil no banco permanece inalterado
+    const usuarioBanco = db.prepare(`
+      SELECT perfil
+      FROM usuarios
+      WHERE id = ?
+    `).get(paciente.id);
+
+    assert.equal(usuarioBanco.perfil, 'PACIENTE');
+
+  } finally {
+    removerUsuarioTeste(paciente.id);
+  }
+});
+
+// Teste 115 — Preservar dados após operação não autorizada
+test('Deve preservar dados apos tentativa de alteracao nao autorizada', async () => {
+  const paciente = criarUsuarioTeste('PACIENTE');
+
+  try {
+    // Criar uma solicitação diretamente no banco
+    const resultado = db.prepare(`
+      INSERT INTO solicitacoes (usuario_id, especialidade)
+      VALUES (?, ?)
+    `).run(paciente.id, 'Cardiologia');
+
+    const solicitacaoId = Number(resultado.lastInsertRowid);
+
+    // Autenticar o paciente
+    const login = await fetch(`${urlBase}/api/auth/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        email: paciente.email,
+        senha: paciente.senha
+      })
+    });
+
+    assert.equal(login.status, 200);
+
+    const cookie = login.headers.get('set-cookie');
+    assert.ok(cookie?.includes('saude.sid='));
+
+    const cookieSessao = cookie.split(';')[0];
+
+    // Tentar alterar o status usando uma rota administrativa
+    const resposta = await fetch(
+      `${urlBase}/api/admin/solicitacoes/${solicitacaoId}/status`,
+      {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Cookie: cookieSessao
+        },
+        body: JSON.stringify({
+          status: 'CONCLUIDA'
+        })
+      }
+    );
+
+    assert.equal(resposta.status, 403);
+
+    // Confirmar que o status original foi preservado
+    const solicitacao = db.prepare(`
+      SELECT status
+      FROM solicitacoes
+      WHERE id = ?
+    `).get(solicitacaoId);
+
+    assert.equal(solicitacao.status, 'PENDENTE');
+
+    // Confirmar que nenhuma alteração foi registrada no histórico
+    const historico = db.prepare(`
+      SELECT COUNT(*) AS total
+      FROM historico_solicitacoes
+      WHERE solicitacao_id = ?
+    `).get(solicitacaoId);
+
+    assert.equal(historico.total, 0);
+
+  } finally {
+    removerSolicitacoesTeste(paciente.id);
+    removerUsuarioTeste(paciente.id);
+  }
+});
