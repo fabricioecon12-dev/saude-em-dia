@@ -2,9 +2,33 @@ const { test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 
 const app = require('../../backend/index');
+const db = require('../../backend/config/database');
+const bcrypt = require('../../backend/node_modules/bcrypt');
 
 let servidor;
 let urlBase;
+
+function criarUsuarioTeste(perfil = 'PACIENTE') {
+  const email = `teste-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}@exemplo.com`;
+  const senha = 'SenhaTeste123!';
+
+  const senhaHash = bcrypt.hashSync(senha, 10);
+
+  const resultado = db.prepare(`
+    INSERT INTO usuarios (nome, email, senha_hash, perfil)
+    VALUES (?, ?, ?, ?)
+  `).run('Usuario Teste Automatizado', email, senhaHash, perfil);
+
+  return {
+    id: Number(resultado.lastInsertRowid),
+    email,
+    senha
+  };
+}
+
+function removerUsuarioTeste(id) {
+  db.prepare('DELETE FROM usuarios WHERE id = ?').run(id);
+}
 
 before(async () => {
   servidor = app.listen(0);
@@ -466,4 +490,215 @@ test('Deve manter rota administrativa protegida apos logout', async () => {
 
   assert.equal(resposta.status, 401);
   assert.equal(dados.sucesso, false);
+});
+
+// Teste 51 — Login autenticado com usuário temporário
+test('Deve realizar login e receber cookie de sessao', async () => {
+  const usuario = criarUsuarioTeste();
+
+  try {
+    const resposta = await fetch(`${urlBase}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: usuario.email,
+        senha: usuario.senha
+      })
+    });
+
+    const dados = await resposta.json();
+    const cookie = resposta.headers.get('set-cookie');
+
+    assert.equal(resposta.status, 200);
+    assert.equal(dados.sucesso, true);
+    assert.equal(dados.usuario.id, usuario.id);
+    assert.equal(dados.usuario.perfil, 'PACIENTE');
+    assert.ok(cookie?.includes('saude.sid='));
+
+  } finally {
+    removerUsuarioTeste(usuario.id);
+  }
+});
+
+// Teste 52 — Consultar sessão autenticada
+test('Deve identificar o usuario com sessao autenticada', async () => {
+  const usuario = criarUsuarioTeste();
+
+  try {
+    const login = await fetch(`${urlBase}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: usuario.email,
+        senha: usuario.senha
+      })
+    });
+
+    assert.equal(login.status, 200);
+
+    const cookie = login.headers.get('set-cookie');
+    assert.ok(cookie?.includes('saude.sid='));
+
+    const resposta = await fetch(`${urlBase}/api/auth/me`, {
+      headers: {
+        Cookie: cookie.split(';')[0]
+      }
+    });
+
+    const dados = await resposta.json();
+
+    assert.equal(resposta.status, 200);
+    assert.equal(dados.sucesso, true);
+    assert.equal(dados.usuario.id, usuario.id);
+    assert.equal(dados.usuario.email, usuario.email);
+    assert.equal(dados.usuario.perfil, 'PACIENTE');
+
+  } finally {
+    removerUsuarioTeste(usuario.id);
+  }
+});
+
+// Teste 53 — Logout de usuário autenticado
+test('Deve encerrar uma sessao autenticada com sucesso', async () => {
+  const usuario = criarUsuarioTeste();
+
+  try {
+    const login = await fetch(`${urlBase}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: usuario.email,
+        senha: usuario.senha
+      })
+    });
+
+    assert.equal(login.status, 200);
+
+    const cookie = login.headers.get('set-cookie');
+    assert.ok(cookie?.includes('saude.sid='));
+
+    const resposta = await fetch(`${urlBase}/api/auth/logout`, {
+      method: 'POST',
+      headers: {
+        Cookie: cookie.split(';')[0]
+      }
+    });
+
+    const dados = await resposta.json();
+
+    assert.equal(resposta.status, 200);
+    assert.equal(dados.sucesso, true);
+    assert.equal(dados.mensagem, 'Sessão encerrada com sucesso.');
+
+  } finally {
+    removerUsuarioTeste(usuario.id);
+  }
+});
+
+// Teste 54 — Impedir acesso após logout autenticado
+test('Deve invalidar a sessao apos o logout', async () => {
+  const usuario = criarUsuarioTeste();
+
+  try {
+    const login = await fetch(`${urlBase}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: usuario.email,
+        senha: usuario.senha
+      })
+    });
+
+    assert.equal(login.status, 200);
+
+    const cookie = login.headers.get('set-cookie');
+    assert.ok(cookie?.includes('saude.sid='));
+
+    const cookieSessao = cookie.split(';')[0];
+
+    const logout = await fetch(`${urlBase}/api/auth/logout`, {
+      method: 'POST',
+      headers: {
+        Cookie: cookieSessao
+      }
+    });
+
+    assert.equal(logout.status, 200);
+
+    const resposta = await fetch(`${urlBase}/api/auth/me`, {
+      headers: {
+        Cookie: cookieSessao
+      }
+    });
+
+    const dados = await resposta.json();
+
+    assert.equal(resposta.status, 401);
+    assert.equal(dados.sucesso, false);
+    assert.equal(dados.mensagem, 'Usuário não autenticado.');
+
+  } finally {
+    removerUsuarioTeste(usuario.id);
+  }
+});
+
+// Teste 55 — Bloquear acesso administrativo após logout
+test('Deve bloquear acesso administrativo apos logout', async () => {
+  const usuario = criarUsuarioTeste('ADMIN');
+
+  try {
+    const login = await fetch(`${urlBase}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: usuario.email,
+        senha: usuario.senha
+      })
+    });
+
+    assert.equal(login.status, 200);
+
+    const cookie = login.headers.get('set-cookie');
+    assert.ok(cookie?.includes('saude.sid='));
+
+    const cookieSessao = cookie.split(';')[0];
+
+    const acessoAntes = await fetch(
+      `${urlBase}/api/admin/solicitacoes/resumo`,
+      {
+        headers: {
+          Cookie: cookieSessao
+        }
+      }
+    );
+
+    assert.equal(acessoAntes.status, 200);
+
+    const logout = await fetch(`${urlBase}/api/auth/logout`, {
+      method: 'POST',
+      headers: {
+        Cookie: cookieSessao
+      }
+    });
+
+    assert.equal(logout.status, 200);
+
+    const acessoDepois = await fetch(
+      `${urlBase}/api/admin/solicitacoes/resumo`,
+      {
+        headers: {
+          Cookie: cookieSessao
+        }
+      }
+    );
+
+    const dados = await acessoDepois.json();
+
+    assert.equal(acessoDepois.status, 401);
+    assert.equal(dados.sucesso, false);
+    assert.equal(dados.mensagem, 'Usuário não autenticado.');
+
+  } finally {
+    removerUsuarioTeste(usuario.id);
+  }
 });
