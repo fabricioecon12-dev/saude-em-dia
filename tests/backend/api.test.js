@@ -702,3 +702,223 @@ test('Deve bloquear acesso administrativo apos logout', async () => {
     removerUsuarioTeste(usuario.id);
   }
 });
+
+// Teste 56 — Paciente não pode acessar resumo administrativo
+test('Deve impedir paciente de acessar resumo administrativo', async () => {
+  const usuario = criarUsuarioTeste('PACIENTE');
+
+  try {
+    const login = await fetch(`${urlBase}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: usuario.email,
+        senha: usuario.senha
+      })
+    });
+
+    assert.equal(login.status, 200);
+
+    const cookie = login.headers.get('set-cookie');
+    assert.ok(cookie?.includes('saude.sid='));
+
+    const resposta = await fetch(
+      `${urlBase}/api/admin/solicitacoes/resumo`,
+      {
+        headers: {
+          Cookie: cookie.split(';')[0]
+        }
+      }
+    );
+
+    const dados = await resposta.json();
+
+    assert.equal(resposta.status, 403);
+    assert.equal(dados.sucesso, false);
+    assert.equal(
+      dados.mensagem,
+      'Acesso permitido somente para administradores.'
+    );
+
+  } finally {
+    removerUsuarioTeste(usuario.id);
+  }
+});
+
+// Teste 57 — Paciente não pode consultar lista administrativa
+test('Deve impedir paciente de consultar lista administrativa', async () => {
+  const usuario = criarUsuarioTeste('PACIENTE');
+
+  try {
+    const login = await fetch(`${urlBase}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: usuario.email,
+        senha: usuario.senha
+      })
+    });
+
+    assert.equal(login.status, 200);
+
+    const cookie = login.headers.get('set-cookie');
+    assert.ok(cookie?.includes('saude.sid='));
+
+    const resposta = await fetch(
+      `${urlBase}/api/admin/solicitacoes`,
+      {
+        headers: {
+          Cookie: cookie.split(';')[0]
+        }
+      }
+    );
+
+    const dados = await resposta.json();
+
+    assert.equal(resposta.status, 403);
+    assert.equal(dados.sucesso, false);
+    assert.equal(
+      dados.mensagem,
+      'Acesso permitido somente para administradores.'
+    );
+
+  } finally {
+    removerUsuarioTeste(usuario.id);
+  }
+});
+
+// Teste 58 — Paciente não pode alterar status de solicitações
+test('Deve impedir paciente de alterar status de solicitacoes', async () => {
+  const usuario = criarUsuarioTeste('PACIENTE');
+
+  try {
+    const login = await fetch(`${urlBase}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: usuario.email,
+        senha: usuario.senha
+      })
+    });
+
+    assert.equal(login.status, 200);
+
+    const cookie = login.headers.get('set-cookie');
+    assert.ok(cookie?.includes('saude.sid='));
+
+    const resposta = await fetch(
+      `${urlBase}/api/admin/solicitacoes/1/status`,
+      {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Cookie: cookie.split(';')[0]
+        },
+        body: JSON.stringify({
+          status: 'AGENDADA'
+        })
+      }
+    );
+
+    const dados = await resposta.json();
+
+    assert.equal(resposta.status, 403);
+    assert.equal(dados.sucesso, false);
+    assert.equal(
+      dados.mensagem,
+      'Acesso permitido somente para administradores.'
+    );
+
+  } finally {
+    removerUsuarioTeste(usuario.id);
+  }
+});
+
+// Teste 59 — Administrador não pode consultar solicitações como paciente
+test('Deve impedir administrador de consultar solicitacoes como paciente', async () => {
+  const usuario = criarUsuarioTeste('ADMIN');
+
+  try {
+    const login = await fetch(`${urlBase}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: usuario.email,
+        senha: usuario.senha
+      })
+    });
+
+    assert.equal(login.status, 200);
+
+    const cookie = login.headers.get('set-cookie');
+    assert.ok(cookie?.includes('saude.sid='));
+
+    const resposta = await fetch(
+      `${urlBase}/api/paciente/solicitacoes`,
+      {
+        headers: {
+          Cookie: cookie.split(';')[0]
+        }
+      }
+    );
+
+    const dados = await resposta.json();
+
+    assert.equal(resposta.status, 403);
+    assert.equal(dados.sucesso, false);
+    assert.equal(
+      dados.mensagem,
+      'Acesso permitido somente para pacientes.'
+    );
+
+  } finally {
+    removerUsuarioTeste(usuario.id);
+  }
+});
+
+// Teste 60 — Administrador não pode cadastrar solicitações como paciente
+test('Deve impedir administrador de cadastrar solicitacoes como paciente', async () => {
+  const usuario = criarUsuarioTeste('ADMIN');
+
+  try {
+    const login = await fetch(`${urlBase}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: usuario.email,
+        senha: usuario.senha
+      })
+    });
+
+    assert.equal(login.status, 200);
+
+    const cookie = login.headers.get('set-cookie');
+    assert.ok(cookie?.includes('saude.sid='));
+
+    const resposta = await fetch(
+      `${urlBase}/api/paciente/solicitacoes`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Cookie: cookie.split(';')[0]
+        },
+        body: JSON.stringify({
+          especialidade: 'Cardiologia'
+        })
+      }
+    );
+
+    const dados = await resposta.json();
+
+    assert.equal(resposta.status, 403);
+    assert.equal(dados.sucesso, false);
+    assert.equal(
+      dados.mensagem,
+      'Acesso permitido somente para pacientes.'
+    );
+
+  } finally {
+    removerUsuarioTeste(usuario.id);
+  }
+});
