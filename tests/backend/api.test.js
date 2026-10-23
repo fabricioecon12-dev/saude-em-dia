@@ -3929,3 +3929,280 @@ test('Deve preservar dados apos tentativa de alteracao nao autorizada', async ()
     removerUsuarioTeste(paciente.id);
   }
 });
+
+// Teste 116 — Verificar atributos de seguranca do cookie
+test('Deve configurar corretamente o cookie de sessao', async () => {
+  const usuario = criarUsuarioTeste('PACIENTE');
+
+  try {
+    const resposta = await fetch(`${urlBase}/api/auth/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        email: usuario.email,
+        senha: usuario.senha
+      })
+    });
+
+    assert.equal(resposta.status, 200);
+
+    const cookie = resposta.headers.get('set-cookie');
+
+    assert.ok(cookie, 'O servidor deve enviar um cookie');
+    assert.match(cookie, /saude\.sid=/i);
+    assert.match(cookie, /httponly/i);
+    assert.match(cookie, /samesite=lax/i);
+    assert.match(cookie, /expires=/i);
+
+    // Em ambiente local HTTP, o cookie nao usa Secure
+    assert.doesNotMatch(cookie, /(?:^|;\s*)secure(?:;|$)/i);
+
+  } finally {
+    removerUsuarioTeste(usuario.id);
+  }
+});
+
+// Teste 117 — Rejeitar JSON malformado no login
+test('Deve rejeitar JSON malformado na autenticacao', async () => {
+  const resposta = await fetch(`${urlBase}/api/auth/login`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: '{"email":"teste@exemplo.com","senha":'
+  });
+
+  // O Express deve rejeitar o JSON invalido
+  assert.equal(resposta.status, 400);
+
+  // Uma requisicao invalida nao deve criar sessao autenticada
+  const cookie = resposta.headers.get('set-cookie');
+
+  if (cookie) {
+    const verificacao = await fetch(`${urlBase}/api/auth/me`, {
+      headers: {
+        Cookie: cookie.split(';')[0]
+      }
+    });
+
+    assert.equal(verificacao.status, 401);
+  }
+});
+
+// Teste 118 — Remover espacos da especialidade medica
+test('Deve remover espacos da especialidade antes de salvar', async () => {
+  const paciente = criarUsuarioTeste('PACIENTE');
+
+  try {
+    // Autenticar o paciente
+    const login = await fetch(`${urlBase}/api/auth/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        email: paciente.email,
+        senha: paciente.senha
+      })
+    });
+
+    assert.equal(login.status, 200);
+
+    const cookie = login.headers.get('set-cookie');
+    assert.ok(cookie?.includes('saude.sid='));
+
+    // Criar solicitacao com espacos desnecessarios
+    const resposta = await fetch(
+      `${urlBase}/api/paciente/solicitacoes`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Cookie: cookie.split(';')[0]
+        },
+        body: JSON.stringify({
+          especialidade: '   Cardiologia   '
+        })
+      }
+    );
+
+    assert.equal(resposta.status, 201);
+
+    const dados = await resposta.json();
+    assert.equal(dados.sucesso, true);
+
+    // Conferir o valor realmente armazenado no banco
+    const solicitacao = db.prepare(`
+      SELECT especialidade
+      FROM solicitacoes
+      WHERE id = ?
+    `).get(dados.solicitacao_id);
+
+    assert.ok(solicitacao);
+    assert.equal(solicitacao.especialidade, 'Cardiologia');
+
+  } finally {
+    removerSolicitacoesTeste(paciente.id);
+    removerUsuarioTeste(paciente.id);
+  }
+});
+
+// Teste 119 — Validar totais do resumo administrativo
+test('Deve apresentar totais corretos no resumo administrativo', async () => {
+  const administrador = criarUsuarioTeste('ADMIN');
+
+  try {
+    // Autenticar o administrador
+    const login = await fetch(`${urlBase}/api/auth/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        email: administrador.email,
+        senha: administrador.senha
+      })
+    });
+
+    assert.equal(login.status, 200);
+
+    const cookie = login.headers.get('set-cookie');
+    assert.ok(cookie?.includes('saude.sid='));
+
+    // Consultar o resumo administrativo
+    const resposta = await fetch(
+      `${urlBase}/api/admin/solicitacoes/resumo`,
+      {
+        headers: {
+          Cookie: cookie.split(';')[0]
+        }
+      }
+    );
+
+    assert.equal(resposta.status, 200);
+
+    const dados = await resposta.json();
+
+    // Consultar os totais diretamente no banco
+    const totais = db.prepare(`
+      SELECT
+        COUNT(*) AS total,
+        SUM(CASE WHEN status = 'PENDENTE' THEN 1 ELSE 0 END) AS pendentes,
+        SUM(CASE WHEN status = 'AGENDADA' THEN 1 ELSE 0 END) AS agendadas
+      FROM solicitacoes
+    `).get();
+
+    // Comparar a API com os dados reais
+    assert.equal(dados.sucesso, true);
+    assert.equal(dados.totalSolicitacoes, totais.total);
+    assert.equal(dados.solicitacoesPendentes, totais.pendentes);
+    assert.equal(dados.solicitacoesAgendadas, totais.agendadas);
+
+  } finally {
+    removerUsuarioTeste(administrador.id);
+  }
+});
+
+// Teste 120 — Atualizar indicadores apos mudanca de status
+test('Deve atualizar resumo administrativo apos mudar status', async () => {
+  const administrador = criarUsuarioTeste('ADMIN');
+  const paciente = criarUsuarioTeste('PACIENTE');
+
+  try {
+    // Criar uma solicitacao pendente
+    const resultado = db.prepare(`
+      INSERT INTO solicitacoes (usuario_id, especialidade)
+      VALUES (?, ?)
+    `).run(paciente.id, 'Cardiologia');
+
+    const solicitacaoId = Number(resultado.lastInsertRowid);
+
+    // Autenticar o administrador
+    const login = await fetch(`${urlBase}/api/auth/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        email: administrador.email,
+        senha: administrador.senha
+      })
+    });
+
+    assert.equal(login.status, 200);
+
+    const cookie = login.headers.get('set-cookie');
+    assert.ok(cookie?.includes('saude.sid='));
+
+    const headersSessao = {
+      Cookie: cookie.split(';')[0]
+    };
+
+    // Consultar indicadores antes da alteracao
+    const respostaAntes = await fetch(
+      `${urlBase}/api/admin/solicitacoes/resumo`,
+      { headers: headersSessao }
+    );
+
+    assert.equal(respostaAntes.status, 200);
+    const antes = await respostaAntes.json();
+
+    // Alterar a solicitacao para AGENDADA
+    const atualizacao = await fetch(
+      `${urlBase}/api/admin/solicitacoes/${solicitacaoId}/status`,
+      {
+        method: 'PATCH',
+        headers: {
+          ...headersSessao,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          status: 'AGENDADA'
+        })
+      }
+    );
+
+    assert.equal(atualizacao.status, 200);
+
+    // Consultar indicadores apos a alteracao
+    const respostaDepois = await fetch(
+      `${urlBase}/api/admin/solicitacoes/resumo`,
+      { headers: headersSessao }
+    );
+
+    assert.equal(respostaDepois.status, 200);
+    const depois = await respostaDepois.json();
+
+    // Verificar a atualizacao dos indicadores
+    assert.equal(
+      depois.totalSolicitacoes,
+      antes.totalSolicitacoes
+    );
+
+    assert.equal(
+      depois.solicitacoesPendentes,
+      antes.solicitacoesPendentes - 1
+    );
+
+    assert.equal(
+      depois.solicitacoesAgendadas,
+      antes.solicitacoesAgendadas + 1
+    );
+
+    // Confirmar o status armazenado no banco
+    const solicitacao = db.prepare(`
+      SELECT status
+      FROM solicitacoes
+      WHERE id = ?
+    `).get(solicitacaoId);
+
+    assert.equal(solicitacao.status, 'AGENDADA');
+
+  } finally {
+    removerSolicitacoesTeste(paciente.id);
+    removerUsuarioTeste(paciente.id);
+    removerUsuarioTeste(administrador.id);
+  }
+});
