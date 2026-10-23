@@ -104,3 +104,61 @@ test('Deve rejeitar solicitacao sem autenticacao', async () => {
   assert.equal(resposta.status, 401);
   assert.equal(dados.sucesso, false);
 });
+
+// Teste 26 — Alteração de status sem autenticação
+test('Deve rejeitar alteracao de status sem autenticacao', async () => {
+  const resposta = await fetch(`${urlBase}/api/admin/solicitacoes/1/status`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status: 'AGENDADA' })
+  });
+
+  const dados = await resposta.json();
+
+  assert.equal(resposta.status, 401);
+  assert.equal(dados.sucesso, false);
+});
+
+// Teste 27 — Alteração de status com corpo vazio e sem autenticação
+test('Deve rejeitar alteracao de status sem autenticacao e sem dados', async () => {
+  const resposta = await fetch(`${urlBase}/api/admin/solicitacoes/1/status`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({})
+  });
+
+  const dados = await resposta.json();
+
+  assert.equal(resposta.status, 401);
+  assert.equal(dados.sucesso, false);
+});
+
+// Teste 28 — Consulta administrativa sem autenticação
+test('Deve rejeitar consulta administrativa sem autenticacao', async () => {
+  const resposta = await fetch(`${urlBase}/api/admin/solicitacoes`);
+
+  const dados = await resposta.json();
+
+  assert.equal(resposta.status, 401);
+  assert.equal(dados.sucesso, false);
+});
+
+// Teste 29 — Consulta do paciente sem autenticação
+test('Deve rejeitar consulta de solicitacoes sem autenticacao', async () => {
+  const resposta = await fetch(`${urlBase}/api/paciente/solicitacoes`);
+
+  const dados = await resposta.json();
+
+  assert.equal(resposta.status, 401);
+  assert.equal(dados.sucesso, false);
+});
+
+// Teste 30 — Histórico administrativo sem autenticação
+test('Deve rejeitar consulta de historico administrativo sem autenticacao', async () => {
+  const resposta = await fetch(`${urlBase}/api/admin/solicitacoes/1/historico`);
+
+  const dados = await resposta.json();
+
+  assert.equal(resposta.status, 401);
+  assert.equal(dados.sucesso, false);
+});
