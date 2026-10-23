@@ -2602,3 +2602,453 @@ test('Deve manter sessao antiga invalida apos novo login', async () => {
   }
 });
 
+// Teste 96 — Integrar cadastro do paciente com consulta administrativa
+test('Deve exibir ao administrador a solicitacao criada pelo paciente', async () => {
+  const paciente = criarUsuarioTeste('PACIENTE');
+  const administrador = criarUsuarioTeste('ADMIN');
+
+  try {
+    // Autenticar o paciente
+    const loginPaciente = await fetch(`${urlBase}/api/auth/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        email: paciente.email,
+        senha: paciente.senha
+      })
+    });
+
+    assert.equal(loginPaciente.status, 200);
+
+    const cookiePaciente = loginPaciente.headers.get('set-cookie');
+    assert.ok(cookiePaciente?.includes('saude.sid='));
+
+    // Criar solicitação médica
+    const cadastro = await fetch(
+      `${urlBase}/api/paciente/solicitacoes`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Cookie: cookiePaciente.split(';')[0]
+        },
+        body: JSON.stringify({
+          especialidade: 'Cardiologia'
+        })
+      }
+    );
+
+    assert.equal(cadastro.status, 201);
+
+    // Autenticar o administrador
+    const loginAdmin = await fetch(`${urlBase}/api/auth/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        email: administrador.email,
+        senha: administrador.senha
+      })
+    });
+
+    assert.equal(loginAdmin.status, 200);
+
+    const cookieAdmin = loginAdmin.headers.get('set-cookie');
+    assert.ok(cookieAdmin?.includes('saude.sid='));
+
+    // Consultar solicitações pela área administrativa
+    const resposta = await fetch(
+      `${urlBase}/api/admin/solicitacoes`,
+      {
+        headers: {
+          Cookie: cookieAdmin.split(';')[0]
+        }
+      }
+    );
+
+    assert.equal(resposta.status, 200);
+
+    const dados = await resposta.json();
+
+    // Verificar se a solicitação chegou ao banco de dados
+    const solicitacao = db.prepare(`
+      SELECT id, usuario_id, especialidade, status
+      FROM solicitacoes
+      WHERE usuario_id = ?
+      ORDER BY id DESC
+      LIMIT 1
+    `).get(paciente.id);
+
+    assert.ok(solicitacao);
+    assert.equal(solicitacao.especialidade, 'Cardiologia');
+    assert.equal(solicitacao.status, 'PENDENTE');
+
+    // Confirmar que a consulta administrativa foi bem-sucedida
+    assert.equal(dados.sucesso, true);
+
+  } finally {
+    removerSolicitacoesTeste(paciente.id);
+    removerUsuarioTeste(paciente.id);
+    removerUsuarioTeste(administrador.id);
+  }
+});
+
+// Teste 97 — Integrar atualização administrativa com consulta do paciente
+test('Deve mostrar ao paciente o status atualizado pelo administrador', async () => {
+  const paciente = criarUsuarioTeste('PACIENTE');
+  const administrador = criarUsuarioTeste('ADMIN');
+
+  try {
+    // Criar solicitação com status inicial PENDENTE
+    const resultado = db.prepare(`
+      INSERT INTO solicitacoes (usuario_id, especialidade)
+      VALUES (?, ?)
+    `).run(paciente.id, 'Cardiologia');
+
+    const solicitacaoId = Number(resultado.lastInsertRowid);
+
+    // Autenticar o administrador
+    const loginAdmin = await fetch(`${urlBase}/api/auth/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        email: administrador.email,
+        senha: administrador.senha
+      })
+    });
+
+    assert.equal(loginAdmin.status, 200);
+
+    const cookieAdmin = loginAdmin.headers.get('set-cookie');
+    assert.ok(cookieAdmin?.includes('saude.sid='));
+
+    // Atualizar o status da solicitação
+    const atualizacao = await fetch(
+      `${urlBase}/api/admin/solicitacoes/${solicitacaoId}/status`,
+      {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Cookie: cookieAdmin.split(';')[0]
+        },
+        body: JSON.stringify({
+          status: 'AGENDADA'
+        })
+      }
+    );
+
+    assert.equal(atualizacao.status, 200);
+
+    // Autenticar o paciente
+    const loginPaciente = await fetch(`${urlBase}/api/auth/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        email: paciente.email,
+        senha: paciente.senha
+      })
+    });
+
+    assert.equal(loginPaciente.status, 200);
+
+    const cookiePaciente = loginPaciente.headers.get('set-cookie');
+    assert.ok(cookiePaciente?.includes('saude.sid='));
+
+    // Consultar solicitações do paciente
+    const resposta = await fetch(
+      `${urlBase}/api/paciente/solicitacoes`,
+      {
+        headers: {
+          Cookie: cookiePaciente.split(';')[0]
+        }
+      }
+    );
+
+    assert.equal(resposta.status, 200);
+
+    const dados = await resposta.json();
+    assert.equal(dados.sucesso, true);
+
+    // Confirmar que o status foi atualizado no banco
+    const solicitacao = db.prepare(`
+      SELECT status
+      FROM solicitacoes
+      WHERE id = ?
+    `).get(solicitacaoId);
+
+    assert.ok(solicitacao);
+    assert.equal(solicitacao.status, 'AGENDADA');
+
+  } finally {
+    removerSolicitacoesTeste(paciente.id);
+    removerUsuarioTeste(paciente.id);
+    removerUsuarioTeste(administrador.id);
+  }
+});
+
+// Teste 98 — Integrar atualização de status com histórico do paciente
+test('Deve permitir ao paciente consultar historico apos atualizacao administrativa', async () => {
+  const paciente = criarUsuarioTeste('PACIENTE');
+  const administrador = criarUsuarioTeste('ADMIN');
+
+  try {
+    // Criar solicitação médica
+    const resultado = db.prepare(`
+      INSERT INTO solicitacoes (usuario_id, especialidade)
+      VALUES (?, ?)
+    `).run(paciente.id, 'Cardiologia');
+
+    const solicitacaoId = Number(resultado.lastInsertRowid);
+
+    // Autenticar o administrador
+    const loginAdmin = await fetch(`${urlBase}/api/auth/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        email: administrador.email,
+        senha: administrador.senha
+      })
+    });
+
+    assert.equal(loginAdmin.status, 200);
+
+    const cookieAdmin = loginAdmin.headers.get('set-cookie');
+    assert.ok(cookieAdmin?.includes('saude.sid='));
+
+    // Atualizar status pela API administrativa
+    const atualizacao = await fetch(
+      `${urlBase}/api/admin/solicitacoes/${solicitacaoId}/status`,
+      {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Cookie: cookieAdmin.split(';')[0]
+        },
+        body: JSON.stringify({
+          status: 'AGENDADA'
+        })
+      }
+    );
+
+    assert.equal(atualizacao.status, 200);
+
+    // Autenticar o paciente
+    const loginPaciente = await fetch(`${urlBase}/api/auth/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        email: paciente.email,
+        senha: paciente.senha
+      })
+    });
+
+    assert.equal(loginPaciente.status, 200);
+
+    const cookiePaciente = loginPaciente.headers.get('set-cookie');
+    assert.ok(cookiePaciente?.includes('saude.sid='));
+
+    // Consultar histórico pela API do paciente
+    const resposta = await fetch(
+      `${urlBase}/api/paciente/solicitacoes/${solicitacaoId}/historico`,
+      {
+        method: 'GET',
+        headers: {
+          Cookie: cookiePaciente.split(';')[0]
+        }
+      }
+    );
+
+    assert.equal(resposta.status, 200);
+
+    const dados = await resposta.json();
+
+    assert.equal(dados.sucesso, true);
+    assert.ok(Array.isArray(dados.historico));
+    assert.equal(dados.historico.length, 1);
+
+    assert.equal(
+      dados.historico[0].status_anterior,
+      'PENDENTE'
+    );
+
+    assert.equal(
+      dados.historico[0].status_novo,
+      'AGENDADA'
+    );
+
+  } finally {
+    removerSolicitacoesTeste(paciente.id);
+    removerUsuarioTeste(paciente.id);
+    removerUsuarioTeste(administrador.id);
+  }
+});
+
+// Teste 99 — Impedir alteração de status por paciente
+test('Deve impedir paciente de alterar status e preservar os dados', async () => {
+  const paciente = criarUsuarioTeste('PACIENTE');
+
+  try {
+    // Criar uma solicitação médica
+    const resultado = db.prepare(`
+      INSERT INTO solicitacoes (usuario_id, especialidade)
+      VALUES (?, ?)
+    `).run(paciente.id, 'Cardiologia');
+
+    const solicitacaoId = Number(resultado.lastInsertRowid);
+
+    // Autenticar o paciente
+    const login = await fetch(`${urlBase}/api/auth/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        email: paciente.email,
+        senha: paciente.senha
+      })
+    });
+
+    assert.equal(login.status, 200);
+
+    const cookie = login.headers.get('set-cookie');
+    assert.ok(cookie?.includes('saude.sid='));
+
+    // Tentar alterar o status pela rota administrativa
+    const resposta = await fetch(
+      `${urlBase}/api/admin/solicitacoes/${solicitacaoId}/status`,
+      {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Cookie: cookie.split(';')[0]
+        },
+        body: JSON.stringify({
+          status: 'CONCLUIDA'
+        })
+      }
+    );
+
+    const dados = await resposta.json();
+
+    assert.equal(resposta.status, 403);
+    assert.equal(dados.sucesso, false);
+
+    // Confirmar que o status não foi alterado
+    const solicitacao = db.prepare(`
+      SELECT status
+      FROM solicitacoes
+      WHERE id = ?
+    `).get(solicitacaoId);
+
+    assert.ok(solicitacao);
+    assert.equal(solicitacao.status, 'PENDENTE');
+
+    // Confirmar que nenhum histórico foi criado
+    const historico = db.prepare(`
+      SELECT id
+      FROM historico_solicitacoes
+      WHERE solicitacao_id = ?
+    `).all(solicitacaoId);
+
+    assert.equal(historico.length, 0);
+
+  } finally {
+    removerSolicitacoesTeste(paciente.id);
+    removerUsuarioTeste(paciente.id);
+  }
+});
+
+// Teste 100 — Garantir integridade após atualização inválida
+test('Deve preservar status e historico apos atualizacao administrativa invalida', async () => {
+  const administrador = criarUsuarioTeste('ADMIN');
+  const paciente = criarUsuarioTeste('PACIENTE');
+
+  try {
+    // Criar solicitação com status inicial PENDENTE
+    const resultado = db.prepare(`
+      INSERT INTO solicitacoes (usuario_id, especialidade)
+      VALUES (?, ?)
+    `).run(paciente.id, 'Cardiologia');
+
+    const solicitacaoId = Number(resultado.lastInsertRowid);
+
+    // Autenticar o administrador
+    const login = await fetch(`${urlBase}/api/auth/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        email: administrador.email,
+        senha: administrador.senha
+      })
+    });
+
+    assert.equal(login.status, 200);
+
+    const cookie = login.headers.get('set-cookie');
+    assert.ok(cookie?.includes('saude.sid='));
+
+    // Registrar quantidade inicial de eventos no histórico
+    const historicoInicial = db.prepare(`
+      SELECT COUNT(*) AS total
+      FROM historico_solicitacoes
+      WHERE solicitacao_id = ?
+    `).get(solicitacaoId);
+
+    // Tentar atualizar para um status não permitido
+    const resposta = await fetch(
+      `${urlBase}/api/admin/solicitacoes/${solicitacaoId}/status`,
+      {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Cookie: cookie.split(';')[0]
+        },
+        body: JSON.stringify({
+          status: 'STATUS_INVALIDO'
+        })
+      }
+    );
+
+    assert.equal(resposta.status, 400);
+
+    // Confirmar que o status original foi preservado
+    const solicitacao = db.prepare(`
+      SELECT status
+      FROM solicitacoes
+      WHERE id = ?
+    `).get(solicitacaoId);
+
+    assert.ok(solicitacao);
+    assert.equal(solicitacao.status, 'PENDENTE');
+
+    // Confirmar que nenhum evento indevido foi registrado
+    const historicoFinal = db.prepare(`
+      SELECT COUNT(*) AS total
+      FROM historico_solicitacoes
+      WHERE solicitacao_id = ?
+    `).get(solicitacaoId);
+
+    assert.equal(
+      historicoFinal.total,
+      historicoInicial.total
+    );
+
+  } finally {
+    removerSolicitacoesTeste(paciente.id);
+    removerUsuarioTeste(paciente.id);
+    removerUsuarioTeste(administrador.id);
+  }
+});
