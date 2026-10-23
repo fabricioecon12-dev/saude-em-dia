@@ -162,3 +162,81 @@ test('Deve rejeitar consulta de historico administrativo sem autenticacao', asyn
   assert.equal(resposta.status, 401);
   assert.equal(dados.sucesso, false);
 });
+
+// Teste 31 — Login com e-mail vazio
+test('Deve rejeitar login com email vazio', async () => {
+  const resposta = await fetch(`${urlBase}/api/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      email: '',
+      senha: 'senha_teste'
+    })
+  });
+
+  const dados = await resposta.json();
+
+  assert.equal(resposta.status, 400);
+  assert.equal(dados.sucesso, false);
+});
+
+// Teste 32 — Login com senha vazia
+test('Deve rejeitar login com senha vazia', async () => {
+  const resposta = await fetch(`${urlBase}/api/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      email: 'teste@exemplo.com',
+      senha: ''
+    })
+  });
+
+  const dados = await resposta.json();
+
+  assert.equal(resposta.status, 400);
+  assert.equal(dados.sucesso, false);
+});
+
+// Teste 33 — Login com e-mail de tipo inválido
+test('Deve rejeitar login com email numerico', async () => {
+  const resposta = await fetch(`${urlBase}/api/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      email: 12345,
+      senha: 'senha_teste'
+    })
+  });
+
+  const dados = await resposta.json();
+
+  assert.equal(resposta.status, 400);
+  assert.equal(dados.sucesso, false);
+});
+
+// Teste 34 — Login com senha de tipo inválido
+test('Deve rejeitar login com senha numerica', async () => {
+  const resposta = await fetch(`${urlBase}/api/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      email: 'teste@exemplo.com',
+      senha: 12345
+    })
+  });
+
+  const dados = await resposta.json();
+
+  assert.equal(resposta.status, 400);
+  assert.equal(dados.sucesso, false);
+});
+
+// Teste 35 — Consulta de sessão sem autenticação
+test('Deve rejeitar consulta de usuario sem autenticacao', async () => {
+  const resposta = await fetch(`${urlBase}/api/auth/me`);
+
+  const dados = await resposta.json();
+
+  assert.equal(resposta.status, 401);
+  assert.equal(dados.sucesso, false);
+});
