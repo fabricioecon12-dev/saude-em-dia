@@ -1840,3 +1840,248 @@ test('Deve registrar duas alteracoes consecutivas no historico', async () => {
     removerUsuarioTeste(administrador.id);
   }
 });
+
+// Teste 76 — Rejeitar identificador não numérico
+test('Deve rejeitar ID nao numerico na atualizacao de status', async () => {
+  const administrador = criarUsuarioTeste('ADMIN');
+
+  try {
+    const login = await fetch(`${urlBase}/api/auth/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        email: administrador.email,
+        senha: administrador.senha
+      })
+    });
+
+    assert.equal(login.status, 200);
+
+    const cookie = login.headers.get('set-cookie');
+    assert.ok(cookie?.includes('saude.sid='));
+
+    const resposta = await fetch(
+      `${urlBase}/api/admin/solicitacoes/abc/status`,
+      {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Cookie: cookie.split(';')[0]
+        },
+        body: JSON.stringify({
+          status: 'AGENDADA'
+        })
+      }
+    );
+
+    const dados = await resposta.json();
+
+    assert.equal(resposta.status, 400);
+    assert.equal(dados.sucesso, false);
+    assert.equal(
+      dados.mensagem,
+      'ID da solicitação inválido.'
+    );
+
+  } finally {
+    removerUsuarioTeste(administrador.id);
+  }
+});
+
+// Teste 77 — Rejeitar identificador igual a zero
+test('Deve rejeitar ID zero na atualizacao de status', async () => {
+  const administrador = criarUsuarioTeste('ADMIN');
+
+  try {
+    const login = await fetch(`${urlBase}/api/auth/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        email: administrador.email,
+        senha: administrador.senha
+      })
+    });
+
+    assert.equal(login.status, 200);
+
+    const cookie = login.headers.get('set-cookie');
+    assert.ok(cookie?.includes('saude.sid='));
+
+    const resposta = await fetch(
+      `${urlBase}/api/admin/solicitacoes/0/status`,
+      {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Cookie: cookie.split(';')[0]
+        },
+        body: JSON.stringify({
+          status: 'AGENDADA'
+        })
+      }
+    );
+
+    const dados = await resposta.json();
+
+    assert.equal(resposta.status, 400);
+    assert.equal(dados.sucesso, false);
+    assert.equal(
+      dados.mensagem,
+      'ID da solicitação inválido.'
+    );
+
+  } finally {
+    removerUsuarioTeste(administrador.id);
+  }
+});
+
+// Teste 78 — Rejeitar identificador negativo
+test('Deve rejeitar ID negativo na atualizacao de status', async () => {
+  const administrador = criarUsuarioTeste('ADMIN');
+
+  try {
+    const login = await fetch(`${urlBase}/api/auth/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        email: administrador.email,
+        senha: administrador.senha
+      })
+    });
+
+    assert.equal(login.status, 200);
+
+    const cookie = login.headers.get('set-cookie');
+    assert.ok(cookie?.includes('saude.sid='));
+
+    const resposta = await fetch(
+      `${urlBase}/api/admin/solicitacoes/-1/status`,
+      {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Cookie: cookie.split(';')[0]
+        },
+        body: JSON.stringify({
+          status: 'AGENDADA'
+        })
+      }
+    );
+
+    const dados = await resposta.json();
+
+    assert.equal(resposta.status, 400);
+    assert.equal(dados.sucesso, false);
+    assert.equal(
+      dados.mensagem,
+      'ID da solicitação inválido.'
+    );
+
+  } finally {
+    removerUsuarioTeste(administrador.id);
+  }
+});
+
+// Teste 79 — Rejeitar identificador decimal
+test('Deve rejeitar ID decimal na atualizacao de status', async () => {
+  const administrador = criarUsuarioTeste('ADMIN');
+
+  try {
+    const login = await fetch(`${urlBase}/api/auth/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        email: administrador.email,
+        senha: administrador.senha
+      })
+    });
+
+    assert.equal(login.status, 200);
+
+    const cookie = login.headers.get('set-cookie');
+    assert.ok(cookie?.includes('saude.sid='));
+
+    const resposta = await fetch(
+      `${urlBase}/api/admin/solicitacoes/1.5/status`,
+      {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Cookie: cookie.split(';')[0]
+        },
+        body: JSON.stringify({
+          status: 'AGENDADA'
+        })
+      }
+    );
+
+    const dados = await resposta.json();
+
+    assert.equal(resposta.status, 400);
+    assert.equal(dados.sucesso, false);
+    assert.equal(
+      dados.mensagem,
+      'ID da solicitação inválido.'
+    );
+
+  } finally {
+    removerUsuarioTeste(administrador.id);
+  }
+});
+
+// Teste 80 — Rejeitar identificador acima do limite seguro
+test('Deve rejeitar ID acima do limite seguro na atualizacao de status', async () => {
+  const administrador = criarUsuarioTeste('ADMIN');
+
+  try {
+    const login = await fetch(`${urlBase}/api/auth/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        email: administrador.email,
+        senha: administrador.senha
+      })
+    });
+
+    assert.equal(login.status, 200);
+
+    const cookie = login.headers.get('set-cookie');
+    assert.ok(cookie?.includes('saude.sid='));
+
+    const resposta = await fetch(
+      `${urlBase}/api/admin/solicitacoes/9007199254740992/status`,
+      {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Cookie: cookie.split(';')[0]
+        },
+        body: JSON.stringify({
+          status: 'AGENDADA'
+        })
+      }
+    );
+
+    const dados = await resposta.json();
+
+    assert.equal(resposta.status, 400);
+    assert.equal(dados.sucesso, false);
+    assert.equal(
+      dados.mensagem,
+      'ID da solicitação inválido.'
+    );
+
+  } finally {
+    removerUsuarioTeste(administrador.id);
+  }
+});
