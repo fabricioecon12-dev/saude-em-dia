@@ -922,3 +922,236 @@ test('Deve impedir administrador de cadastrar solicitacoes como paciente', async
     removerUsuarioTeste(usuario.id);
   }
 });
+
+// Teste 61 — Rejeitar solicitação sem especialidade
+test('Deve rejeitar solicitacao sem especialidade de paciente autenticado', async () => {
+  const usuario = criarUsuarioTeste('PACIENTE');
+
+  try {
+    const login = await fetch(`${urlBase}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: usuario.email,
+        senha: usuario.senha
+      })
+    });
+
+    assert.equal(login.status, 200);
+
+    const cookie = login.headers.get('set-cookie');
+    assert.ok(cookie?.includes('saude.sid='));
+
+    const resposta = await fetch(
+      `${urlBase}/api/paciente/solicitacoes`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Cookie: cookie.split(';')[0]
+        },
+        body: JSON.stringify({})
+      }
+    );
+
+    const dados = await resposta.json();
+
+    assert.equal(resposta.status, 400);
+    assert.equal(dados.sucesso, false);
+    assert.equal(
+      dados.mensagem,
+      'Informe uma especialidade médica válida.'
+    );
+
+  } finally {
+    removerUsuarioTeste(usuario.id);
+  }
+});
+
+// Teste 62 — Rejeitar especialidade vazia
+test('Deve rejeitar especialidade vazia de paciente autenticado', async () => {
+  const usuario = criarUsuarioTeste('PACIENTE');
+
+  try {
+    const login = await fetch(`${urlBase}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: usuario.email,
+        senha: usuario.senha
+      })
+    });
+
+    assert.equal(login.status, 200);
+
+    const cookie = login.headers.get('set-cookie');
+    assert.ok(cookie?.includes('saude.sid='));
+
+    const resposta = await fetch(
+      `${urlBase}/api/paciente/solicitacoes`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Cookie: cookie.split(';')[0]
+        },
+        body: JSON.stringify({
+          especialidade: ''
+        })
+      }
+    );
+
+    const dados = await resposta.json();
+
+    assert.equal(resposta.status, 400);
+    assert.equal(dados.sucesso, false);
+    assert.equal(
+      dados.mensagem,
+      'Informe uma especialidade médica válida.'
+    );
+
+  } finally {
+    removerUsuarioTeste(usuario.id);
+  }
+});
+
+// Teste 63 — Rejeitar especialidade contendo apenas espaços
+test('Deve rejeitar especialidade contendo apenas espacos', async () => {
+  const usuario = criarUsuarioTeste('PACIENTE');
+
+  try {
+    const login = await fetch(`${urlBase}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: usuario.email,
+        senha: usuario.senha
+      })
+    });
+
+    assert.equal(login.status, 200);
+
+    const cookie = login.headers.get('set-cookie');
+    assert.ok(cookie?.includes('saude.sid='));
+
+    const resposta = await fetch(
+      `${urlBase}/api/paciente/solicitacoes`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Cookie: cookie.split(';')[0]
+        },
+        body: JSON.stringify({
+          especialidade: '   '
+        })
+      }
+    );
+
+    const dados = await resposta.json();
+
+    assert.equal(resposta.status, 400);
+    assert.equal(dados.sucesso, false);
+    assert.equal(
+      dados.mensagem,
+      'Informe uma especialidade médica válida.'
+    );
+
+  } finally {
+    removerUsuarioTeste(usuario.id);
+  }
+});
+
+// Teste 64 — Rejeitar especialidade numérica
+test('Deve rejeitar especialidade numerica de paciente autenticado', async () => {
+  const usuario = criarUsuarioTeste('PACIENTE');
+
+  try {
+    const login = await fetch(`${urlBase}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: usuario.email,
+        senha: usuario.senha
+      })
+    });
+
+    assert.equal(login.status, 200);
+
+    const cookie = login.headers.get('set-cookie');
+    assert.ok(cookie?.includes('saude.sid='));
+
+    const resposta = await fetch(
+      `${urlBase}/api/paciente/solicitacoes`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Cookie: cookie.split(';')[0]
+        },
+        body: JSON.stringify({
+          especialidade: 123
+        })
+      }
+    );
+
+    const dados = await resposta.json();
+
+    assert.equal(resposta.status, 400);
+    assert.equal(dados.sucesso, false);
+    assert.equal(
+      dados.mensagem,
+      'Informe uma especialidade médica válida.'
+    );
+
+  } finally {
+    removerUsuarioTeste(usuario.id);
+  }
+});
+
+// Teste 65 — Rejeitar especialidade booleana
+test('Deve rejeitar especialidade booleana de paciente autenticado', async () => {
+  const usuario = criarUsuarioTeste('PACIENTE');
+
+  try {
+    const login = await fetch(`${urlBase}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: usuario.email,
+        senha: usuario.senha
+      })
+    });
+
+    assert.equal(login.status, 200);
+
+    const cookie = login.headers.get('set-cookie');
+    assert.ok(cookie?.includes('saude.sid='));
+
+    const resposta = await fetch(
+      `${urlBase}/api/paciente/solicitacoes`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Cookie: cookie.split(';')[0]
+        },
+        body: JSON.stringify({
+          especialidade: true
+        })
+      }
+    );
+
+    const dados = await resposta.json();
+
+    assert.equal(resposta.status, 400);
+    assert.equal(dados.sucesso, false);
+    assert.equal(
+      dados.mensagem,
+      'Informe uma especialidade médica válida.'
+    );
+
+  } finally {
+    removerUsuarioTeste(usuario.id);
+  }
+});
