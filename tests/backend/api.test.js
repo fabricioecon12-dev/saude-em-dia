@@ -1471,3 +1471,372 @@ test('Deve retornar lista vazia para paciente sem solicitacoes', async () => {
     removerUsuarioTeste(usuario.id);
   }
 });
+
+// Teste 71 — Administrador agenda uma solicitação médica
+test('Deve permitir administrador agendar solicitacao medica', async () => {
+  const paciente = criarUsuarioTeste('PACIENTE');
+  const administrador = criarUsuarioTeste('ADMIN');
+
+  try {
+    const resultado = db.prepare(`
+      INSERT INTO solicitacoes (usuario_id, especialidade)
+      VALUES (?, ?)
+    `).run(paciente.id, 'Cardiologia');
+
+    const solicitacaoId = Number(resultado.lastInsertRowid);
+
+    const login = await fetch(`${urlBase}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: administrador.email,
+        senha: administrador.senha
+      })
+    });
+
+    assert.equal(login.status, 200);
+
+    const cookie = login.headers.get('set-cookie');
+    assert.ok(cookie?.includes('saude.sid='));
+
+    const resposta = await fetch(
+      `${urlBase}/api/admin/solicitacoes/${solicitacaoId}/status`,
+      {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Cookie: cookie.split(';')[0]
+        },
+        body: JSON.stringify({
+          status: 'AGENDADA'
+        })
+      }
+    );
+
+    const dados = await resposta.json();
+
+    assert.equal(resposta.status, 200);
+    assert.equal(dados.sucesso, true);
+    assert.equal(
+      dados.mensagem,
+      'Status da solicitação atualizado com sucesso.'
+    );
+    assert.equal(dados.solicitacao.id, solicitacaoId);
+    assert.equal(dados.solicitacao.status, 'AGENDADA');
+
+    const solicitacao = db.prepare(`
+      SELECT status
+      FROM solicitacoes
+      WHERE id = ?
+    `).get(solicitacaoId);
+
+    assert.equal(solicitacao.status, 'AGENDADA');
+
+    const historico = db.prepare(`
+      SELECT status_anterior, status_novo
+      FROM historico_solicitacoes
+      WHERE solicitacao_id = ?
+    `).get(solicitacaoId);
+
+    assert.ok(historico);
+    assert.equal(historico.status_anterior, 'PENDENTE');
+    assert.equal(historico.status_novo, 'AGENDADA');
+
+  } finally {
+    removerSolicitacoesTeste(paciente.id);
+    removerUsuarioTeste(paciente.id);
+    removerUsuarioTeste(administrador.id);
+  }
+});
+
+// Teste 72 — Rejeitar atualização com status inválido
+test('Deve rejeitar status invalido informado pelo administrador', async () => {
+  const paciente = criarUsuarioTeste('PACIENTE');
+  const administrador = criarUsuarioTeste('ADMIN');
+
+  try {
+    const resultado = db.prepare(`
+      INSERT INTO solicitacoes (usuario_id, especialidade)
+      VALUES (?, ?)
+    `).run(paciente.id, 'Neurologia');
+
+    const solicitacaoId = Number(resultado.lastInsertRowid);
+
+    const login = await fetch(`${urlBase}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: administrador.email,
+        senha: administrador.senha
+      })
+    });
+
+    assert.equal(login.status, 200);
+
+    const cookie = login.headers.get('set-cookie');
+    assert.ok(cookie?.includes('saude.sid='));
+
+    const resposta = await fetch(
+      `${urlBase}/api/admin/solicitacoes/${solicitacaoId}/status`,
+      {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Cookie: cookie.split(';')[0]
+        },
+        body: JSON.stringify({
+          status: 'EM_ANALISE'
+        })
+      }
+    );
+
+    const dados = await resposta.json();
+
+    assert.equal(resposta.status, 400);
+    assert.equal(dados.sucesso, false);
+    assert.equal(
+      dados.mensagem,
+      'Status da solicitação inválido.'
+    );
+
+    const solicitacao = db.prepare(`
+      SELECT status
+      FROM solicitacoes
+      WHERE id = ?
+    `).get(solicitacaoId);
+
+    assert.equal(solicitacao.status, 'PENDENTE');
+
+    const historico = db.prepare(`
+      SELECT COUNT(*) AS total
+      FROM historico_solicitacoes
+      WHERE solicitacao_id = ?
+    `).get(solicitacaoId);
+
+    assert.equal(historico.total, 0);
+
+  } finally {
+    removerSolicitacoesTeste(paciente.id);
+    removerUsuarioTeste(paciente.id);
+    removerUsuarioTeste(administrador.id);
+  }
+});
+
+// Teste 73 — Impedir atualização para o mesmo status
+test('Deve rejeitar atualizacao para o mesmo status da solicitacao', async () => {
+  const paciente = criarUsuarioTeste('PACIENTE');
+  const administrador = criarUsuarioTeste('ADMIN');
+
+  try {
+    const resultado = db.prepare(`
+      INSERT INTO solicitacoes (usuario_id, especialidade)
+      VALUES (?, ?)
+    `).run(paciente.id, 'Ortopedia');
+
+    const solicitacaoId = Number(resultado.lastInsertRowid);
+
+    const login = await fetch(`${urlBase}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: administrador.email,
+        senha: administrador.senha
+      })
+    });
+
+    assert.equal(login.status, 200);
+
+    const cookie = login.headers.get('set-cookie');
+    assert.ok(cookie?.includes('saude.sid='));
+
+    const resposta = await fetch(
+      `${urlBase}/api/admin/solicitacoes/${solicitacaoId}/status`,
+      {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Cookie: cookie.split(';')[0]
+        },
+        body: JSON.stringify({
+          status: 'PENDENTE'
+        })
+      }
+    );
+
+    const dados = await resposta.json();
+
+    assert.equal(resposta.status, 409);
+    assert.equal(dados.sucesso, false);
+    assert.equal(
+      dados.mensagem,
+      'A solicitação já possui o status informado.'
+    );
+
+    const solicitacao = db.prepare(`
+      SELECT status
+      FROM solicitacoes
+      WHERE id = ?
+    `).get(solicitacaoId);
+
+    assert.equal(solicitacao.status, 'PENDENTE');
+
+    const historico = db.prepare(`
+      SELECT COUNT(*) AS total
+      FROM historico_solicitacoes
+      WHERE solicitacao_id = ?
+    `).get(solicitacaoId);
+
+    assert.equal(historico.total, 0);
+
+  } finally {
+    removerSolicitacoesTeste(paciente.id);
+    removerUsuarioTeste(paciente.id);
+    removerUsuarioTeste(administrador.id);
+  }
+});
+
+// Teste 74 — Rejeitar atualização de solicitação inexistente
+test('Deve rejeitar atualizacao de solicitacao inexistente', async () => {
+  const administrador = criarUsuarioTeste('ADMIN');
+
+  try {
+    const login = await fetch(`${urlBase}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: administrador.email,
+        senha: administrador.senha
+      })
+    });
+
+    assert.equal(login.status, 200);
+
+    const cookie = login.headers.get('set-cookie');
+    assert.ok(cookie?.includes('saude.sid='));
+
+    const maiorId = db.prepare(`
+      SELECT COALESCE(MAX(id), 0) AS id
+      FROM solicitacoes
+    `).get();
+
+    const idInexistente = maiorId.id + 1000;
+
+    const resposta = await fetch(
+      `${urlBase}/api/admin/solicitacoes/${idInexistente}/status`,
+      {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Cookie: cookie.split(';')[0]
+        },
+        body: JSON.stringify({
+          status: 'AGENDADA'
+        })
+      }
+    );
+
+    const dados = await resposta.json();
+
+    assert.equal(resposta.status, 404);
+    assert.equal(dados.sucesso, false);
+    assert.equal(
+      dados.mensagem,
+      'Solicitação não encontrada.'
+    );
+
+    const historico = db.prepare(`
+      SELECT COUNT(*) AS total
+      FROM historico_solicitacoes
+      WHERE solicitacao_id = ?
+    `).get(idInexistente);
+
+    assert.equal(historico.total, 0);
+
+  } finally {
+    removerUsuarioTeste(administrador.id);
+  }
+});
+
+// Teste 75 — Registrar múltiplas alterações de status
+test('Deve registrar duas alteracoes consecutivas no historico', async () => {
+  const paciente = criarUsuarioTeste('PACIENTE');
+  const administrador = criarUsuarioTeste('ADMIN');
+
+  try {
+    const resultado = db.prepare(`
+      INSERT INTO solicitacoes (usuario_id, especialidade)
+      VALUES (?, ?)
+    `).run(paciente.id, 'Cardiologia');
+
+    const solicitacaoId = Number(resultado.lastInsertRowid);
+
+    const login = await fetch(`${urlBase}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: administrador.email,
+        senha: administrador.senha
+      })
+    });
+
+    assert.equal(login.status, 200);
+
+    const cookie = login.headers.get('set-cookie');
+    assert.ok(cookie?.includes('saude.sid='));
+
+    const url = `${urlBase}/api/admin/solicitacoes/${solicitacaoId}/status`;
+
+    const headers = {
+      'Content-Type': 'application/json',
+      Cookie: cookie.split(';')[0]
+    };
+
+    const primeiraResposta = await fetch(url, {
+      method: 'PATCH',
+      headers,
+      body: JSON.stringify({
+        status: 'AGENDADA'
+      })
+    });
+
+    assert.equal(primeiraResposta.status, 200);
+
+    const segundaResposta = await fetch(url, {
+      method: 'PATCH',
+      headers,
+      body: JSON.stringify({
+        status: 'CONCLUIDA'
+      })
+    });
+
+    assert.equal(segundaResposta.status, 200);
+
+    const solicitacao = db.prepare(`
+      SELECT status
+      FROM solicitacoes
+      WHERE id = ?
+    `).get(solicitacaoId);
+
+    assert.equal(solicitacao.status, 'CONCLUIDA');
+
+    const historico = db.prepare(`
+      SELECT status_anterior, status_novo
+      FROM historico_solicitacoes
+      WHERE solicitacao_id = ?
+      ORDER BY id ASC
+    `).all(solicitacaoId);
+
+    assert.equal(historico.length, 2);
+
+    assert.equal(historico[0].status_anterior, 'PENDENTE');
+    assert.equal(historico[0].status_novo, 'AGENDADA');
+
+    assert.equal(historico[1].status_anterior, 'AGENDADA');
+    assert.equal(historico[1].status_novo, 'CONCLUIDA');
+
+  } finally {
+    removerSolicitacoesTeste(paciente.id);
+    removerUsuarioTeste(paciente.id);
+    removerUsuarioTeste(administrador.id);
+  }
+});
