@@ -2601,3 +2601,4 @@ test('Deve manter sessao antiga invalida apos novo login', async () => {
     removerUsuarioTeste(paciente.id);
   }
 });
+

@@ -468,3 +468,223 @@ test('Deve registrar automaticamente a data do historico', () => {
     bancoTeste.close();
   }
 });
+
+// Teste 91 — Impedir solicitação vinculada a paciente inexistente
+test('Deve impedir solicitacao com paciente inexistente', () => {
+  const pacienteInexistente = -999999;
+
+  assert.throws(() => {
+    db.prepare(`
+      INSERT INTO solicitacoes (usuario_id, especialidade)
+      VALUES (?, ?)
+    `).run(pacienteInexistente, 'Cardiologia');
+  }, {
+    code: 'SQLITE_CONSTRAINT_FOREIGNKEY'
+  });
+});
+
+// Teste 92 — Impedir histórico de solicitação inexistente
+test('Deve impedir historico de solicitacao inexistente', () => {
+  const solicitacaoInexistente = -999999;
+
+  assert.throws(() => {
+    db.prepare(`
+      INSERT INTO historico_solicitacoes
+        (solicitacao_id, status_anterior, status_novo)
+      VALUES (?, ?, ?)
+    `).run(
+      solicitacaoInexistente,
+      'PENDENTE',
+      'AGENDADA'
+    );
+  }, {
+    code: 'SQLITE_CONSTRAINT_FOREIGNKEY'
+  });
+});
+
+// Teste 93 — Impedir exclusão de paciente com solicitações
+test('Deve impedir exclusao de paciente com solicitacoes vinculadas', () => {
+  const email = `integridade-${Date.now()}-${Math.random()}@teste.com`;
+
+  const usuario = db.prepare(`
+    INSERT INTO usuarios (nome, email, senha_hash, perfil)
+    VALUES (?, ?, ?, ?)
+  `).run(
+    'Paciente Integridade',
+    email,
+    'hash-teste',
+    'PACIENTE'
+  );
+
+  const pacienteId = Number(usuario.lastInsertRowid);
+
+  try {
+    db.prepare(`
+      INSERT INTO solicitacoes (usuario_id, especialidade)
+      VALUES (?, ?)
+    `).run(pacienteId, 'Cardiologia');
+
+    // A exclusão deve ser bloqueada pela chave estrangeira
+    assert.throws(() => {
+      db.prepare(`
+        DELETE FROM usuarios WHERE id = ?
+      `).run(pacienteId);
+    }, {
+      code: 'SQLITE_CONSTRAINT_FOREIGNKEY'
+    });
+
+    // Confirmar que o paciente continua cadastrado
+    const paciente = db.prepare(`
+      SELECT id FROM usuarios WHERE id = ?
+    `).get(pacienteId);
+
+    assert.ok(paciente);
+
+  } finally {
+    // Limpar os dados criados pelo teste
+    db.prepare(`
+      DELETE FROM solicitacoes WHERE usuario_id = ?
+    `).run(pacienteId);
+
+    db.prepare(`
+      DELETE FROM usuarios WHERE id = ?
+    `).run(pacienteId);
+  }
+});
+
+// Teste 94 — Impedir exclusão de solicitação com histórico
+test('Deve impedir exclusao de solicitacao com historico vinculado', () => {
+  const email = `historico-${Date.now()}-${Math.random()}@teste.com`;
+
+  const usuario = db.prepare(`
+    INSERT INTO usuarios (nome, email, senha_hash, perfil)
+    VALUES (?, ?, ?, ?)
+  `).run(
+    'Paciente Teste Historico',
+    email,
+    'hash-teste',
+    'PACIENTE'
+  );
+
+  const pacienteId = Number(usuario.lastInsertRowid);
+  let solicitacaoId;
+
+  try {
+    const solicitacao = db.prepare(`
+      INSERT INTO solicitacoes (usuario_id, especialidade)
+      VALUES (?, ?)
+    `).run(pacienteId, 'Cardiologia');
+
+    solicitacaoId = Number(solicitacao.lastInsertRowid);
+
+    db.prepare(`
+      INSERT INTO historico_solicitacoes
+        (solicitacao_id, status_anterior, status_novo)
+      VALUES (?, ?, ?)
+    `).run(solicitacaoId, 'PENDENTE', 'AGENDADA');
+
+    // A exclusão deve ser impedida pela chave estrangeira
+    assert.throws(() => {
+      db.prepare(`
+        DELETE FROM solicitacoes WHERE id = ?
+      `).run(solicitacaoId);
+    }, {
+      code: 'SQLITE_CONSTRAINT_FOREIGNKEY'
+    });
+
+    // Confirmar que a solicitação continua cadastrada
+    const registro = db.prepare(`
+      SELECT id FROM solicitacoes WHERE id = ?
+    `).get(solicitacaoId);
+
+    assert.ok(registro);
+
+    // Confirmar que o histórico foi preservado
+    const historico = db.prepare(`
+      SELECT id
+      FROM historico_solicitacoes
+      WHERE solicitacao_id = ?
+    `).all(solicitacaoId);
+
+    assert.equal(historico.length, 1);
+
+  } finally {
+    // Remover os dados na ordem correta
+    if (solicitacaoId) {
+      db.prepare(`
+        DELETE FROM historico_solicitacoes
+        WHERE solicitacao_id = ?
+      `).run(solicitacaoId);
+
+      db.prepare(`
+        DELETE FROM solicitacoes WHERE id = ?
+      `).run(solicitacaoId);
+    }
+
+    db.prepare(`
+      DELETE FROM usuarios WHERE id = ?
+    `).run(pacienteId);
+  }
+});
+
+// Teste 95 — Preservar dados após atualização inválida
+test('Deve preservar status original apos atualizacao invalida', () => {
+  const email = `status-${Date.now()}-${Math.random()}@teste.com`;
+
+  const usuario = db.prepare(`
+    INSERT INTO usuarios (nome, email, senha_hash, perfil)
+    VALUES (?, ?, ?, ?)
+  `).run(
+    'Paciente Teste Integridade',
+    email,
+    'hash-teste',
+    'PACIENTE'
+  );
+
+  const pacienteId = Number(usuario.lastInsertRowid);
+  let solicitacaoId;
+
+  try {
+    const solicitacao = db.prepare(`
+      INSERT INTO solicitacoes (usuario_id, especialidade)
+      VALUES (?, ?)
+    `).run(pacienteId, 'Cardiologia');
+
+    solicitacaoId = Number(solicitacao.lastInsertRowid);
+
+    // Tentar atualizar com um status não permitido
+    assert.throws(() => {
+      db.prepare(`
+        UPDATE solicitacoes
+        SET status = ?
+        WHERE id = ?
+      `).run('STATUS_INVALIDO', solicitacaoId);
+    }, {
+      code: 'SQLITE_CONSTRAINT_CHECK'
+    });
+
+    // Verificar se o status original foi preservado
+    const registro = db.prepare(`
+      SELECT status
+      FROM solicitacoes
+      WHERE id = ?
+    `).get(solicitacaoId);
+
+    assert.ok(registro);
+    assert.equal(registro.status, 'PENDENTE');
+
+  } finally {
+    // Limpar os registros criados pelo teste
+    if (solicitacaoId) {
+      db.prepare(`
+        DELETE FROM solicitacoes
+        WHERE id = ?
+      `).run(solicitacaoId);
+    }
+
+    db.prepare(`
+      DELETE FROM usuarios
+      WHERE id = ?
+    `).run(pacienteId);
+  }
+});
