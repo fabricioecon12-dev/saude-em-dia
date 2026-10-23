@@ -4848,3 +4848,88 @@ test('Deve impedir acesso ao historico de outro paciente', async () => {
     removerUsuarioTeste(pacienteB.id);
   }
 });
+
+test('Deve preservar status e historico quando ocorrer falha interna na API', async () => {
+  const paciente = criarUsuarioTeste('PACIENTE');
+  const administrador = criarUsuarioTeste('ADMIN');
+
+  try {
+
+    const resultado = db.prepare(`
+  INSERT INTO solicitacoes (usuario_id, especialidade)
+  VALUES (?, ?)
+`).run(paciente.id, 'Cardiologia');
+
+const solicitacaoId = Number(resultado.lastInsertRowid);
+// Autenticar o administrador
+const loginAdmin = await fetch(`${urlBase}/api/auth/login`, {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json'
+  },
+  body: JSON.stringify({
+    email: administrador.email,
+    senha: administrador.senha
+  })
+});
+
+assert.equal(loginAdmin.status, 200);
+
+const cookieAdmin = loginAdmin.headers.get('set-cookie');
+assert.ok(cookieAdmin?.includes('saude.sid='));
+// Simular uma falha durante a gravacao do historico
+db.exec(`
+  CREATE TEMP TRIGGER bloquear_historico_api_teste
+  BEFORE INSERT ON historico_solicitacoes
+  BEGIN
+    SELECT RAISE(ABORT, 'Falha simulada no historico da API');
+  END;
+`);
+// Tentar atualizar o status com a falha simulada no historico
+const respostaAtualizacao = await fetch(
+  `${urlBase}/api/admin/solicitacoes/${solicitacaoId}/status`,
+  {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      Cookie: cookieAdmin.split(';')[0]
+    },
+    body: JSON.stringify({
+      status: 'AGENDADA'
+    })
+  }
+);
+
+// A API deve informar que ocorreu um erro interno
+assert.equal(respostaAtualizacao.status, 500);
+
+// Verificar se o status original foi preservado
+const solicitacaoAposFalha = db.prepare(`
+  SELECT status
+  FROM solicitacoes
+  WHERE id = ?
+`).get(solicitacaoId);
+
+assert.ok(solicitacaoAposFalha);
+assert.equal(solicitacaoAposFalha.status, 'PENDENTE');
+
+// Verificar se nenhum historico foi registrado apos a falha
+const historicoAposFalha = db.prepare(`
+  SELECT COUNT(*) AS total
+  FROM historico_solicitacoes
+  WHERE solicitacao_id = ?
+`).get(solicitacaoId);
+
+assert.equal(historicoAposFalha.total, 0);
+
+
+
+ } finally {
+  // Remover o gatilho temporario antes da limpeza dos dados
+  db.exec('DROP TRIGGER IF EXISTS temp.bloquear_historico_api_teste');
+
+  removerSolicitacoesTeste(paciente.id);
+  removerUsuarioTeste(paciente.id);
+  removerUsuarioTeste(administrador.id);
+}
+});
