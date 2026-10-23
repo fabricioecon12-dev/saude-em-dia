@@ -4509,3 +4509,342 @@ test('Deve preservar sessao apos requisicao invalida', async () => {
     removerUsuarioTeste(paciente.id);
   }
 });
+
+// Teste 126 — Rejeitar cookie de sessao adulterado
+test('Deve rejeitar cookie de sessao adulterado', async () => {
+  const paciente = criarUsuarioTeste('PACIENTE');
+
+  try {
+    // Autenticar o paciente
+    const login = await fetch(`${urlBase}/api/auth/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        email: paciente.email,
+        senha: paciente.senha
+      })
+    });
+
+    assert.equal(login.status, 200);
+
+    const cookie = login.headers.get('set-cookie');
+    assert.ok(cookie?.includes('saude.sid='));
+
+    const cookieOriginal = cookie.split(';')[0];
+
+    // Alterar um caractere da assinatura do cookie
+    const separador = cookieOriginal.lastIndexOf('.');
+    assert.ok(separador > 0);
+
+    const inicioAssinatura = separador + 1;
+    const caractereOriginal = cookieOriginal[inicioAssinatura];
+
+    const caractereAlterado =
+      caractereOriginal === 'A' ? 'B' : 'A';
+
+    const cookieAdulterado =
+      cookieOriginal.slice(0, inicioAssinatura) +
+      caractereAlterado +
+      cookieOriginal.slice(inicioAssinatura + 1);
+
+    assert.notEqual(cookieAdulterado, cookieOriginal);
+
+    // Tentar acessar a sessao com o cookie adulterado
+    const resposta = await fetch(`${urlBase}/api/auth/me`, {
+      headers: {
+        Cookie: cookieAdulterado
+      }
+    });
+
+    const dados = await resposta.json();
+
+    assert.equal(resposta.status, 401);
+    assert.equal(dados.sucesso, false);
+
+    // Confirmar que a sessao original continua valida
+    const verificacao = await fetch(`${urlBase}/api/auth/me`, {
+      headers: {
+        Cookie: cookieOriginal
+      }
+    });
+
+    assert.equal(verificacao.status, 200);
+
+    const dadosOriginais = await verificacao.json();
+
+    assert.equal(dadosOriginais.usuario.id, paciente.id);
+
+  } finally {
+    removerUsuarioTeste(paciente.id);
+  }
+});
+
+// Teste 127 — Rejeitar identificador de sessao inexistente
+test('Deve rejeitar cookie de sessao inexistente', async () => {
+  const cookieInexistente =
+    'saude.sid=s%3Asessao-inexistente.assinatura-invalida';
+
+  // Tentar acessar uma rota protegida
+  const resposta = await fetch(`${urlBase}/api/auth/me`, {
+    headers: {
+      Cookie: cookieInexistente
+    }
+  });
+
+  const dados = await resposta.json();
+
+  // A API deve impedir o acesso
+  assert.equal(resposta.status, 401);
+  assert.equal(dados.sucesso, false);
+  assert.equal(
+    dados.mensagem,
+    'Usuário não autenticado.'
+  );
+
+  // Verificar também uma rota administrativa
+  const respostaAdmin = await fetch(
+    `${urlBase}/api/admin/solicitacoes`,
+    {
+      headers: {
+        Cookie: cookieInexistente
+      }
+    }
+  );
+
+  assert.equal(respostaAdmin.status, 401);
+});
+
+// Teste 128 — Bloquear resumo administrativo para pacientes
+test('Deve bloquear resumo administrativo para paciente autenticado', async () => {
+  const paciente = criarUsuarioTeste('PACIENTE');
+
+  try {
+    // Autenticar o paciente
+    const login = await fetch(`${urlBase}/api/auth/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        email: paciente.email,
+        senha: paciente.senha
+      })
+    });
+
+    assert.equal(login.status, 200);
+
+    const cookie = login.headers.get('set-cookie');
+    assert.ok(cookie?.includes('saude.sid='));
+
+    const cookieSessao = cookie.split(';')[0];
+
+    // Tentar acessar o resumo exclusivo do administrador
+    const resposta = await fetch(
+      `${urlBase}/api/admin/solicitacoes/resumo`,
+      {
+        headers: {
+          Cookie: cookieSessao
+        }
+      }
+    );
+
+    const dados = await resposta.json();
+
+    assert.equal(resposta.status, 403);
+    assert.equal(dados.sucesso, false);
+    assert.equal(
+      dados.mensagem,
+      'Acesso permitido somente para administradores.'
+    );
+
+    // Confirmar que o bloqueio não encerrou a sessão
+    const verificacao = await fetch(`${urlBase}/api/auth/me`, {
+      headers: {
+        Cookie: cookieSessao
+      }
+    });
+
+    assert.equal(verificacao.status, 200);
+
+    const dadosSessao = await verificacao.json();
+
+    assert.equal(dadosSessao.usuario.id, paciente.id);
+    assert.equal(dadosSessao.usuario.perfil, 'PACIENTE');
+
+  } finally {
+    removerUsuarioTeste(paciente.id);
+  }
+});
+
+// Teste 129 — Impedir cadastro de solicitacao por administrador
+test('Deve impedir administrador de cadastrar solicitacao como paciente', async () => {
+  const administrador = criarUsuarioTeste('ADMIN');
+
+  try {
+    // Autenticar o administrador
+    const login = await fetch(`${urlBase}/api/auth/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        email: administrador.email,
+        senha: administrador.senha
+      })
+    });
+
+    assert.equal(login.status, 200);
+
+    const cookie = login.headers.get('set-cookie');
+    assert.ok(cookie?.includes('saude.sid='));
+
+    const cookieSessao = cookie.split(';')[0];
+
+    // Consultar quantidade inicial de solicitacoes
+    const antes = db.prepare(`
+      SELECT COUNT(*) AS total
+      FROM solicitacoes
+      WHERE usuario_id = ?
+    `).get(administrador.id);
+
+    // Tentar cadastrar uma solicitacao como administrador
+    const resposta = await fetch(
+      `${urlBase}/api/paciente/solicitacoes`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Cookie: cookieSessao
+        },
+        body: JSON.stringify({
+          especialidade: 'Cardiologia'
+        })
+      }
+    );
+
+    const dados = await resposta.json();
+
+    assert.equal(resposta.status, 403);
+    assert.equal(dados.sucesso, false);
+    assert.equal(
+      dados.mensagem,
+      'Acesso permitido somente para pacientes.'
+    );
+
+    // Confirmar que nenhuma solicitacao foi criada
+    const depois = db.prepare(`
+      SELECT COUNT(*) AS total
+      FROM solicitacoes
+      WHERE usuario_id = ?
+    `).get(administrador.id);
+
+    assert.equal(depois.total, antes.total);
+
+    // Confirmar que a sessao administrativa permanece valida
+    const verificacao = await fetch(`${urlBase}/api/auth/me`, {
+      headers: {
+        Cookie: cookieSessao
+      }
+    });
+
+    assert.equal(verificacao.status, 200);
+
+    const dadosSessao = await verificacao.json();
+
+    assert.equal(dadosSessao.usuario.id, administrador.id);
+    assert.equal(dadosSessao.usuario.perfil, 'ADMIN');
+
+  } finally {
+    removerSolicitacoesTeste(administrador.id);
+    removerUsuarioTeste(administrador.id);
+  }
+});
+
+// Teste 130 — Impedir acesso ao historico de outro paciente
+test('Deve impedir acesso ao historico de outro paciente', async () => {
+  const pacienteA = criarUsuarioTeste('PACIENTE');
+  const pacienteB = criarUsuarioTeste('PACIENTE');
+
+  try {
+    // Criar uma solicitacao pertencente ao paciente B
+    const resultado = db.prepare(`
+      INSERT INTO solicitacoes (usuario_id, especialidade)
+      VALUES (?, ?)
+    `).run(pacienteB.id, 'Cardiologia');
+
+    const solicitacaoId = Number(resultado.lastInsertRowid);
+
+    // Criar um registro de historico para a solicitacao
+    db.prepare(`
+      INSERT INTO historico_solicitacoes
+        (solicitacao_id, status_anterior, status_novo)
+      VALUES (?, ?, ?)
+    `).run(solicitacaoId, 'PENDENTE', 'AGENDADA');
+
+    // Autenticar o paciente A
+    const login = await fetch(`${urlBase}/api/auth/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        email: pacienteA.email,
+        senha: pacienteA.senha
+      })
+    });
+
+    assert.equal(login.status, 200);
+
+    const cookie = login.headers.get('set-cookie');
+    assert.ok(cookie?.includes('saude.sid='));
+
+    const cookieSessao = cookie.split(';')[0];
+
+    // Paciente A tenta consultar o historico do paciente B
+    const resposta = await fetch(
+      `${urlBase}/api/paciente/solicitacoes/${solicitacaoId}/historico`,
+      {
+        headers: {
+          Cookie: cookieSessao
+        }
+      }
+    );
+
+    const dados = await resposta.json();
+
+    // A API deve negar acesso sem revelar o historico
+    assert.equal(resposta.status, 404);
+    assert.equal(dados.sucesso, false);
+    assert.equal(dados.historico, undefined);
+
+    // Confirmar que o historico original foi preservado
+    const historico = db.prepare(`
+      SELECT status_anterior, status_novo
+      FROM historico_solicitacoes
+      WHERE solicitacao_id = ?
+    `).all(solicitacaoId);
+
+    assert.equal(historico.length, 1);
+    assert.equal(historico[0].status_anterior, 'PENDENTE');
+    assert.equal(historico[0].status_novo, 'AGENDADA');
+
+    // Confirmar que a sessao do paciente A continua valida
+    const verificacao = await fetch(`${urlBase}/api/auth/me`, {
+      headers: {
+        Cookie: cookieSessao
+      }
+    });
+
+    assert.equal(verificacao.status, 200);
+
+    const dadosSessao = await verificacao.json();
+    assert.equal(dadosSessao.usuario.id, pacienteA.id);
+
+  } finally {
+    removerSolicitacoesTeste(pacienteB.id);
+    removerUsuarioTeste(pacienteA.id);
+    removerUsuarioTeste(pacienteB.id);
+  }
+});
