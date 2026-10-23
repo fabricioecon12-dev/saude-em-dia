@@ -326,3 +326,74 @@ test('Deve rejeitar login com email sem dominio', async () => {
   assert.equal(resposta.status, 400);
   assert.equal(dados.sucesso, false);
 });
+
+// Teste 41 — Resumo administrativo sem autenticação
+test('Deve bloquear resumo administrativo sem autenticacao', async () => {
+  const resposta = await fetch(
+    `${urlBase}/api/admin/solicitacoes/resumo`
+  );
+
+  const dados = await resposta.json();
+
+  assert.equal(resposta.status, 401);
+  assert.equal(dados.sucesso, false);
+});
+
+// Teste 42 — Histórico do paciente sem autenticação
+test('Deve bloquear historico do paciente sem autenticacao', async () => {
+  const resposta = await fetch(
+    `${urlBase}/api/paciente/solicitacoes/1/historico`
+  );
+
+  const dados = await resposta.json();
+
+  assert.equal(resposta.status, 401);
+  assert.equal(dados.sucesso, false);
+});
+
+// Teste 43 — Histórico administrativo com ID inválido
+test('Deve bloquear historico administrativo com ID invalido sem autenticacao', async () => {
+  const resposta = await fetch(
+    `${urlBase}/api/admin/solicitacoes/abc/historico`
+  );
+
+  const dados = await resposta.json();
+
+  assert.equal(resposta.status, 401);
+  assert.equal(dados.sucesso, false);
+});
+
+// Teste 44 — Alteração de status com ID inválido
+test('Deve bloquear alteracao de status sem autenticacao', async () => {
+  const resposta = await fetch(
+    `${urlBase}/api/admin/solicitacoes/abc/status`,
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 'AGENDADA' })
+    }
+  );
+
+  const dados = await resposta.json();
+
+  assert.equal(resposta.status, 401);
+  assert.equal(dados.sucesso, false);
+});
+
+// Teste 45 — Criação de solicitação com dados válidos,
+// mas sem autenticação
+test('Deve bloquear criacao de solicitacao sem autenticacao', async () => {
+  const resposta = await fetch(
+    `${urlBase}/api/paciente/solicitacoes`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ especialidade: 'Cardiologia' })
+    }
+  );
+
+  const dados = await resposta.json();
+
+  assert.equal(resposta.status, 401);
+  assert.equal(dados.sucesso, false);
+});
