@@ -397,3 +397,73 @@ test('Deve bloquear criacao de solicitacao sem autenticacao', async () => {
   assert.equal(resposta.status, 401);
   assert.equal(dados.sucesso, false);
 });
+
+// Teste 46 — Logout sem autenticação
+test('Deve permitir logout sem usuario autenticado', async () => {
+  const resposta = await fetch(`${urlBase}/api/auth/logout`, {
+    method: 'POST'
+  });
+
+  const dados = await resposta.json();
+
+  assert.equal(resposta.status, 200);
+  assert.equal(dados.sucesso, true);
+  assert.equal(dados.mensagem, 'Sessão encerrada com sucesso.');
+});
+
+// Teste 47 — Sessão não autenticada após logout
+test('Deve manter usuario nao autenticado apos logout', async () => {
+  const logout = await fetch(`${urlBase}/api/auth/logout`, {
+    method: 'POST'
+  });
+
+  assert.equal(logout.status, 200);
+
+  const resposta = await fetch(`${urlBase}/api/auth/me`);
+  const dados = await resposta.json();
+
+  assert.equal(resposta.status, 401);
+  assert.equal(dados.sucesso, false);
+});
+
+// Teste 48 — Logout repetido
+test('Deve permitir duas requisicoes consecutivas de logout', async () => {
+  const primeira = await fetch(`${urlBase}/api/auth/logout`, {
+    method: 'POST'
+  });
+
+  const segunda = await fetch(`${urlBase}/api/auth/logout`, {
+    method: 'POST'
+  });
+
+  assert.equal(primeira.status, 200);
+  assert.equal(segunda.status, 200);
+});
+
+// Teste 49 — Consulta de sessão sem autenticação
+test('Deve informar ausencia de sessao autenticada', async () => {
+  const resposta = await fetch(`${urlBase}/api/auth/me`);
+  const dados = await resposta.json();
+
+  assert.equal(resposta.status, 401);
+  assert.equal(dados.sucesso, false);
+  assert.equal(dados.mensagem, 'Usuário não autenticado.');
+});
+
+// Teste 50 — Logout não concede acesso administrativo
+test('Deve manter rota administrativa protegida apos logout', async () => {
+  const logout = await fetch(`${urlBase}/api/auth/logout`, {
+    method: 'POST'
+  });
+
+  assert.equal(logout.status, 200);
+
+  const resposta = await fetch(
+    `${urlBase}/api/admin/solicitacoes/resumo`
+  );
+
+  const dados = await resposta.json();
+
+  assert.equal(resposta.status, 401);
+  assert.equal(dados.sucesso, false);
+});
