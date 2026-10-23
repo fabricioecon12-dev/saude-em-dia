@@ -2085,3 +2085,235 @@ test('Deve rejeitar ID acima do limite seguro na atualizacao de status', async (
     removerUsuarioTeste(administrador.id);
   }
 });
+
+// Teste 81 — Impedir paciente de acessar histórico administrativo
+test('Deve impedir paciente de consultar historico administrativo', async () => {
+  const paciente = criarUsuarioTeste('PACIENTE');
+
+  try {
+    const login = await fetch(`${urlBase}/api/auth/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        email: paciente.email,
+        senha: paciente.senha
+      })
+    });
+
+    assert.equal(login.status, 200);
+
+    const cookie = login.headers.get('set-cookie');
+    assert.ok(cookie?.includes('saude.sid='));
+
+    const resposta = await fetch(
+      `${urlBase}/api/admin/solicitacoes/1/historico`,
+      {
+        method: 'GET',
+        headers: {
+          Cookie: cookie.split(';')[0]
+        }
+      }
+    );
+
+    const dados = await resposta.json();
+
+    assert.equal(resposta.status, 403);
+    assert.equal(dados.sucesso, false);
+    assert.equal(
+      dados.mensagem,
+      'Acesso permitido somente para administradores.'
+    );
+
+  } finally {
+    removerUsuarioTeste(paciente.id);
+  }
+});
+
+// Teste 82 — Impedir administrador de acessar histórico do paciente
+test('Deve impedir administrador de consultar historico pela rota do paciente', async () => {
+  const administrador = criarUsuarioTeste('ADMIN');
+
+  try {
+    const login = await fetch(`${urlBase}/api/auth/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        email: administrador.email,
+        senha: administrador.senha
+      })
+    });
+
+    assert.equal(login.status, 200);
+
+    const cookie = login.headers.get('set-cookie');
+    assert.ok(cookie?.includes('saude.sid='));
+
+    const resposta = await fetch(
+      `${urlBase}/api/paciente/solicitacoes/1/historico`,
+      {
+        method: 'GET',
+        headers: {
+          Cookie: cookie.split(';')[0]
+        }
+      }
+    );
+
+    const dados = await resposta.json();
+
+    assert.equal(resposta.status, 403);
+    assert.equal(dados.sucesso, false);
+    assert.equal(
+  dados.mensagem,
+  'Acesso permitido somente a pacientes.'
+   );
+
+  } finally {
+    removerUsuarioTeste(administrador.id);
+  }
+});
+
+// Teste 83 — Impedir acesso ao histórico de outro paciente
+test('Deve impedir paciente de consultar historico de outro paciente', async () => {
+  const pacienteA = criarUsuarioTeste('PACIENTE');
+  const pacienteB = criarUsuarioTeste('PACIENTE');
+
+  try {
+    // Criar uma solicitação pertencente ao paciente B
+    const resultado = db.prepare(`
+      INSERT INTO solicitacoes (usuario_id, especialidade)
+      VALUES (?, ?)
+    `).run(pacienteB.id, 'Cardiologia');
+
+    const solicitacaoId = Number(resultado.lastInsertRowid);
+
+    // Autenticar o paciente A
+    const login = await fetch(`${urlBase}/api/auth/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        email: pacienteA.email,
+        senha: pacienteA.senha
+      })
+    });
+
+    assert.equal(login.status, 200);
+
+    const cookie = login.headers.get('set-cookie');
+    assert.ok(cookie?.includes('saude.sid='));
+
+    // Tentar consultar o histórico da solicitação do paciente B
+    const resposta = await fetch(
+      `${urlBase}/api/paciente/solicitacoes/${solicitacaoId}/historico`,
+      {
+        method: 'GET',
+        headers: {
+          Cookie: cookie.split(';')[0]
+        }
+      }
+    );
+
+    const dados = await resposta.json();
+
+    assert.equal(resposta.status, 404);
+    assert.equal(dados.sucesso, false);
+    assert.equal(
+      dados.mensagem,
+      'Solicitação não encontrada.'
+    );
+
+  } finally {
+    removerSolicitacoesTeste(pacienteB.id);
+    removerUsuarioTeste(pacienteA.id);
+    removerUsuarioTeste(pacienteB.id);
+  }
+});
+
+// Teste 84 — Impedir consulta ao histórico sem autenticação
+test('Deve impedir consulta ao historico do paciente sem autenticacao', async () => {
+  const resposta = await fetch(
+    `${urlBase}/api/paciente/solicitacoes/1/historico`,
+    {
+      method: 'GET'
+    }
+  );
+
+  const dados = await resposta.json();
+
+  assert.equal(resposta.status, 401);
+  assert.equal(dados.sucesso, false);
+  assert.equal(
+    dados.mensagem,
+    'Usuário não autenticado.'
+  );
+});
+
+// Teste 85 — Permitir consulta ao próprio histórico
+test('Deve permitir paciente consultar seu proprio historico', async () => {
+  const paciente = criarUsuarioTeste('PACIENTE');
+
+  try {
+    // Criar uma solicitação para o paciente
+    const resultado = db.prepare(`
+      INSERT INTO solicitacoes (usuario_id, especialidade)
+      VALUES (?, ?)
+    `).run(paciente.id, 'Cardiologia');
+
+    const solicitacaoId = Number(resultado.lastInsertRowid);
+
+    // Registrar uma alteração no histórico
+    db.prepare(`
+      INSERT INTO historico_solicitacoes
+        (solicitacao_id, status_anterior, status_novo)
+      VALUES (?, ?, ?)
+    `).run(solicitacaoId, 'PENDENTE', 'AGENDADA');
+
+    // Autenticar o paciente
+    const login = await fetch(`${urlBase}/api/auth/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        email: paciente.email,
+        senha: paciente.senha
+      })
+    });
+
+    assert.equal(login.status, 200);
+
+    const cookie = login.headers.get('set-cookie');
+    assert.ok(cookie?.includes('saude.sid='));
+
+    // Consultar o próprio histórico
+    const resposta = await fetch(
+      `${urlBase}/api/paciente/solicitacoes/${solicitacaoId}/historico`,
+      {
+        method: 'GET',
+        headers: {
+          Cookie: cookie.split(';')[0]
+        }
+      }
+    );
+
+    const dados = await resposta.json();
+
+    assert.equal(resposta.status, 200);
+    assert.equal(dados.sucesso, true);
+
+    // Confirmar que o histórico foi retornado
+    assert.ok(Array.isArray(dados.historico));
+    assert.equal(dados.historico.length, 1);
+    assert.equal(dados.historico[0].status_anterior, 'PENDENTE');
+    assert.equal(dados.historico[0].status_novo, 'AGENDADA');
+
+  } finally {
+    removerSolicitacoesTeste(paciente.id);
+    removerUsuarioTeste(paciente.id);
+  }
+});
