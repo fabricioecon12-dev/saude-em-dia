@@ -688,3 +688,90 @@ test('Deve preservar status original apos atualizacao invalida', () => {
     `).run(pacienteId);
   }
 });
+
+// Teste 104 — Verificar rollback da transação em caso de falha
+test('Deve reverter atualizacao de status quando o historico falhar', () => {
+  const usuario = db.prepare(`
+    INSERT INTO usuarios (nome, email, senha_hash, perfil)
+    VALUES (?, ?, ?, ?)
+  `).run(
+    'Paciente Teste Rollback',
+    `rollback-${Date.now()}-${Math.random()}@teste.com`,
+    'hash_teste',
+    'PACIENTE'
+  );
+
+  const usuarioId = Number(usuario.lastInsertRowid);
+  let solicitacaoId;
+
+  try {
+    const resultado = db.prepare(`
+      INSERT INTO solicitacoes (usuario_id, especialidade)
+      VALUES (?, ?)
+    `).run(usuarioId, 'Cardiologia');
+
+    solicitacaoId = Number(resultado.lastInsertRowid);
+
+    // Simular falha no momento de registrar o histórico
+    db.exec(`
+      CREATE TEMP TRIGGER bloquear_historico_teste_104
+      BEFORE INSERT ON historico_solicitacoes
+      BEGIN
+        SELECT RAISE(ABORT, 'Falha simulada no historico');
+      END;
+    `);
+
+    // Executar a mesma sequência de operações em uma transação
+    const atualizarComHistorico = db.transaction(() => {
+      db.prepare(`
+        UPDATE solicitacoes
+        SET status = ?
+        WHERE id = ?
+      `).run('AGENDADA', solicitacaoId);
+
+      db.prepare(`
+        INSERT INTO historico_solicitacoes
+          (solicitacao_id, status_anterior, status_novo)
+        VALUES (?, ?, ?)
+      `).run(solicitacaoId, 'PENDENTE', 'AGENDADA');
+    });
+
+    // A falha deve interromper e reverter a transação
+    assert.throws(
+      () => atualizarComHistorico(),
+      /Falha simulada no historico/
+    );
+
+    const solicitacao = db.prepare(`
+      SELECT status FROM solicitacoes WHERE id = ?
+    `).get(solicitacaoId);
+
+    assert.equal(solicitacao.status, 'PENDENTE');
+
+    const historico = db.prepare(`
+      SELECT COUNT(*) AS total
+      FROM historico_solicitacoes
+      WHERE solicitacao_id = ?
+    `).get(solicitacaoId);
+
+    assert.equal(historico.total, 0);
+
+  } finally {
+    // Remover o gatilho temporário antes da limpeza
+    db.exec('DROP TRIGGER IF EXISTS temp.bloquear_historico_teste_104');
+
+    if (solicitacaoId) {
+      db.prepare(`
+        DELETE FROM historico_solicitacoes
+        WHERE solicitacao_id = ?
+      `).run(solicitacaoId);
+
+      db.prepare(`
+        DELETE FROM solicitacoes
+        WHERE id = ?
+      `).run(solicitacaoId);
+    }
+
+    db.prepare('DELETE FROM usuarios WHERE id = ?').run(usuarioId);
+  }
+});

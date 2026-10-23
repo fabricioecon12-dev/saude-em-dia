@@ -3052,3 +3052,300 @@ test('Deve preservar status e historico apos atualizacao administrativa invalida
     removerUsuarioTeste(administrador.id);
   }
 });
+
+// Teste 101 — Verificar tentativas consecutivas de login incorreto
+test('Deve rejeitar tentativas consecutivas de login com senha incorreta', async () => {
+  const usuario = criarUsuarioTeste('PACIENTE');
+
+  try {
+    for (let tentativa = 1; tentativa <= 5; tentativa++) {
+      const resposta = await fetch(`${urlBase}/api/auth/login`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          email: usuario.email,
+          senha: 'SenhaIncorreta123!'
+        })
+      });
+
+      const dados = await resposta.json();
+
+      assert.equal(resposta.status, 401);
+      assert.equal(dados.sucesso, false);
+      assert.equal(dados.mensagem, 'E-mail ou senha incorretos.');
+      assert.equal(resposta.headers.get('set-cookie'), null);
+    }
+
+  } finally {
+    removerUsuarioTeste(usuario.id);
+  }
+});
+
+// Teste 102 — Verificar cadastro simultâneo de solicitações
+test('Deve registrar corretamente cinco solicitacoes simultaneas', async () => {
+  const paciente = criarUsuarioTeste('PACIENTE');
+
+  try {
+    const login = await fetch(`${urlBase}/api/auth/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        email: paciente.email,
+        senha: paciente.senha
+      })
+    });
+
+    assert.equal(login.status, 200);
+
+    const cookie = login.headers.get('set-cookie');
+    assert.ok(cookie?.includes('saude.sid='));
+
+    const especialidades = [
+      'Cardiologia',
+      'Neurologia',
+      'Dermatologia',
+      'Ortopedia',
+      'Oftalmologia'
+    ];
+
+    // Enviar cinco requisições sem aguardar cada uma individualmente
+    const respostas = await Promise.all(
+      especialidades.map((especialidade) =>
+        fetch(`${urlBase}/api/paciente/solicitacoes`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Cookie: cookie.split(';')[0]
+          },
+          body: JSON.stringify({ especialidade })
+        })
+      )
+    );
+
+    // Confirmar que todas foram cadastradas
+    for (const resposta of respostas) {
+      assert.equal(resposta.status, 201);
+    }
+
+    // Consultar os registros persistidos no banco
+    const solicitacoes = db.prepare(`
+      SELECT id, especialidade, status
+      FROM solicitacoes
+      WHERE usuario_id = ?
+    `).all(paciente.id);
+
+    assert.equal(solicitacoes.length, 5);
+
+    // Confirmar que não existem identificadores duplicados
+    const ids = solicitacoes.map((solicitacao) => solicitacao.id);
+    assert.equal(new Set(ids).size, 5);
+
+    // Confirmar que todas as especialidades foram registradas
+    for (const especialidade of especialidades) {
+      assert.ok(
+        solicitacoes.some(
+          (solicitacao) => solicitacao.especialidade === especialidade
+        )
+      );
+    }
+
+    // Confirmar o status inicial de todas as solicitações
+    for (const solicitacao of solicitacoes) {
+      assert.equal(solicitacao.status, 'PENDENTE');
+    }
+
+  } finally {
+    removerSolicitacoesTeste(paciente.id);
+    removerUsuarioTeste(paciente.id);
+  }
+});
+
+// Teste 103 — Verificar atualizações concorrentes de status
+test('Deve manter consistencia entre status e historico em atualizacoes concorrentes', async () => {
+  const paciente = criarUsuarioTeste('PACIENTE');
+  const administrador = criarUsuarioTeste('ADMIN');
+
+  try {
+    const resultado = db.prepare(`
+      INSERT INTO solicitacoes (usuario_id, especialidade)
+      VALUES (?, ?)
+    `).run(paciente.id, 'Cardiologia');
+
+    const solicitacaoId = Number(resultado.lastInsertRowid);
+
+    // Autenticar o administrador
+    const login = await fetch(`${urlBase}/api/auth/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        email: administrador.email,
+        senha: administrador.senha
+      })
+    });
+
+    assert.equal(login.status, 200);
+
+    const cookie = login.headers.get('set-cookie');
+    assert.ok(cookie?.includes('saude.sid='));
+
+    // Enviar duas atualizações simultaneamente
+    const respostas = await Promise.all([
+      fetch(`${urlBase}/api/admin/solicitacoes/${solicitacaoId}/status`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Cookie: cookie.split(';')[0]
+        },
+        body: JSON.stringify({ status: 'AGENDADA' })
+      }),
+      fetch(`${urlBase}/api/admin/solicitacoes/${solicitacaoId}/status`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Cookie: cookie.split(';')[0]
+        },
+        body: JSON.stringify({ status: 'CONCLUIDA' })
+      })
+    ]);
+
+    // Ambas as atualizações são válidas no fluxo atual
+    assert.deepEqual(
+      respostas.map((resposta) => resposta.status).sort(),
+      [200, 200]
+    );
+
+    const solicitacao = db.prepare(`
+      SELECT status
+      FROM solicitacoes
+      WHERE id = ?
+    `).get(solicitacaoId);
+
+    const historico = db.prepare(`
+      SELECT id, status_anterior, status_novo
+      FROM historico_solicitacoes
+      WHERE solicitacao_id = ?
+      ORDER BY id ASC
+    `).all(solicitacaoId);
+
+    assert.equal(historico.length, 2);
+
+    // Primeira transição parte do estado inicial
+    assert.equal(historico[0].status_anterior, 'PENDENTE');
+
+    // Segunda transição deve partir do resultado da primeira
+    assert.equal(
+      historico[1].status_anterior,
+      historico[0].status_novo
+    );
+
+    // O estado final deve coincidir com o último histórico
+    assert.equal(
+      solicitacao.status,
+      historico[1].status_novo
+    );
+
+  } finally {
+    removerSolicitacoesTeste(paciente.id);
+    removerUsuarioTeste(paciente.id);
+    removerUsuarioTeste(administrador.id);
+  }
+});
+
+// Teste 105 — Verificar isolamento de dados entre pacientes
+test('Deve impedir que pacientes visualizem solicitacoes de outros usuarios', async () => {
+  const pacienteA = criarUsuarioTeste('PACIENTE');
+  const pacienteB = criarUsuarioTeste('PACIENTE');
+
+  try {
+    // Criar solicitações para pacientes diferentes
+    const resultadoA = db.prepare(`
+      INSERT INTO solicitacoes (usuario_id, especialidade)
+      VALUES (?, ?)
+    `).run(pacienteA.id, 'Cardiologia');
+
+    const resultadoB = db.prepare(`
+      INSERT INTO solicitacoes (usuario_id, especialidade)
+      VALUES (?, ?)
+    `).run(pacienteB.id, 'Neurologia');
+
+    const idA = Number(resultadoA.lastInsertRowid);
+    const idB = Number(resultadoB.lastInsertRowid);
+
+    // Autenticar os dois pacientes
+    async function autenticar(paciente) {
+      const resposta = await fetch(`${urlBase}/api/auth/login`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          email: paciente.email,
+          senha: paciente.senha
+        })
+      });
+
+      assert.equal(resposta.status, 200);
+
+      const cookie = resposta.headers.get('set-cookie');
+      assert.ok(cookie?.includes('saude.sid='));
+
+      return cookie.split(';')[0];
+    }
+
+    const cookieA = await autenticar(pacienteA);
+    const cookieB = await autenticar(pacienteB);
+
+    // Consultar as solicitações dos dois pacientes
+    const [respostaA, respostaB] = await Promise.all([
+      fetch(`${urlBase}/api/paciente/solicitacoes`, {
+        headers: { Cookie: cookieA }
+      }),
+      fetch(`${urlBase}/api/paciente/solicitacoes`, {
+        headers: { Cookie: cookieB }
+      })
+    ]);
+
+    assert.equal(respostaA.status, 200);
+    assert.equal(respostaB.status, 200);
+
+    const dadosA = await respostaA.json();
+    const dadosB = await respostaB.json();
+
+    assert.equal(dadosA.sucesso, true);
+    assert.equal(dadosB.sucesso, true);
+
+    assert.ok(Array.isArray(dadosA.solicitacoes));
+    assert.ok(Array.isArray(dadosB.solicitacoes));
+
+    // Cada paciente deve encontrar sua própria solicitação
+    assert.ok(
+      dadosA.solicitacoes.some((solicitacao) => solicitacao.id === idA)
+    );
+
+    assert.ok(
+      dadosB.solicitacoes.some((solicitacao) => solicitacao.id === idB)
+    );
+
+    // Nenhum paciente deve visualizar a solicitação do outro
+    assert.ok(
+      !dadosA.solicitacoes.some((solicitacao) => solicitacao.id === idB)
+    );
+
+    assert.ok(
+      !dadosB.solicitacoes.some((solicitacao) => solicitacao.id === idA)
+    );
+
+  } finally {
+    removerSolicitacoesTeste(pacienteA.id);
+    removerSolicitacoesTeste(pacienteB.id);
+
+    removerUsuarioTeste(pacienteA.id);
+    removerUsuarioTeste(pacienteB.id);
+  }
+});
