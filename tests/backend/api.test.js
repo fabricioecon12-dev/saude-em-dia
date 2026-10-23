@@ -3349,3 +3349,241 @@ test('Deve impedir que pacientes visualizem solicitacoes de outros usuarios', as
     removerUsuarioTeste(pacienteB.id);
   }
 });
+
+// Teste 106 — Validar login com espaços no e-mail
+test('Deve autenticar usuario com espacos antes e depois do email', async () => {
+  const usuario = criarUsuarioTeste('PACIENTE');
+
+  try {
+    const resposta = await fetch(`${urlBase}/api/auth/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        email: `  ${usuario.email}  `,
+        senha: usuario.senha
+      })
+    });
+
+    const dados = await resposta.json();
+
+    assert.equal(resposta.status, 200);
+    assert.equal(dados.sucesso, true);
+    assert.equal(dados.usuario.id, usuario.id);
+    assert.equal(dados.usuario.email, usuario.email);
+
+  } finally {
+    removerUsuarioTeste(usuario.id);
+  }
+});
+
+// Teste 107 — Verificar preservação dos espaços na senha
+test('Deve rejeitar senha com espacos adicionais', async () => {
+  const usuario = criarUsuarioTeste('PACIENTE');
+
+  try {
+    const resposta = await fetch(`${urlBase}/api/auth/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        email: usuario.email,
+        senha: `  ${usuario.senha}  `
+      })
+    });
+
+    const dados = await resposta.json();
+
+    assert.equal(resposta.status, 401);
+    assert.equal(dados.sucesso, false);
+    assert.equal(dados.mensagem, 'E-mail ou senha incorretos.');
+
+    // Confirmar que nenhuma sessão foi criada
+    assert.equal(resposta.headers.get('set-cookie'), null);
+
+  } finally {
+    removerUsuarioTeste(usuario.id);
+  }
+});
+
+// Teste 108 — Rejeitar login com e-mail inexistente
+test('Deve rejeitar login com email inexistente', async () => {
+  const emailInexistente =
+    `inexistente-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}@exemplo.com`;
+
+  // Confirmar que o e-mail não existe no banco
+  const usuario = db.prepare(`
+    SELECT id
+    FROM usuarios
+    WHERE email = ?
+  `).get(emailInexistente);
+
+  assert.equal(usuario, undefined);
+
+  // Tentar autenticar com o e-mail inexistente
+  const resposta = await fetch(`${urlBase}/api/auth/login`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      email: emailInexistente,
+      senha: 'SenhaTeste123!'
+    })
+  });
+
+  const dados = await resposta.json();
+
+  // Confirmar que a autenticação foi rejeitada
+  assert.equal(resposta.status, 401);
+  assert.equal(dados.sucesso, false);
+  assert.equal(dados.mensagem, 'E-mail ou senha incorretos.');
+
+  // Confirmar que nenhuma sessão autenticada foi criada
+  const cookie = resposta.headers.get('set-cookie');
+
+  if (cookie) {
+    const verificacao = await fetch(`${urlBase}/api/auth/me`, {
+      headers: {
+        Cookie: cookie.split(';')[0]
+      }
+    });
+
+    assert.equal(verificacao.status, 401);
+  }
+});
+
+// Teste 109 — Verificar proteção contra injeção SQL no login
+test('Deve rejeitar tentativa de injecao SQL na autenticacao', async () => {
+  const usuario = criarUsuarioTeste('PACIENTE');
+
+  try {
+    const totalAntes = db.prepare(`
+      SELECT COUNT(*) AS total FROM usuarios
+    `).get().total;
+
+    // Entrada maliciosa tentando manipular a consulta SQL
+    const emailMalicioso = "' OR '1'='1' --@exemplo.com";
+
+    const resposta = await fetch(`${urlBase}/api/auth/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        email: emailMalicioso,
+        senha: usuario.senha
+      })
+    });
+
+    const dados = await resposta.json();
+
+    // A autenticação deve ser rejeitada
+    assert.equal(resposta.status, 400);
+    assert.equal(dados.sucesso, false);
+    assert.equal(dados.mensagem, 'Digite um endereço de e-mail válido.');
+
+    // Confirmar que os registros permanecem preservados
+    const totalDepois = db.prepare(`
+      SELECT COUNT(*) AS total FROM usuarios
+    `).get().total;
+
+    assert.equal(totalDepois, totalAntes);
+
+    // Confirmar que nenhuma sessão autenticada foi criada
+    const cookie = resposta.headers.get('set-cookie');
+
+    if (cookie) {
+      const verificacao = await fetch(`${urlBase}/api/auth/me`, {
+        headers: {
+          Cookie: cookie.split(';')[0]
+        }
+      });
+
+      assert.equal(verificacao.status, 401);
+    }
+
+  } finally {
+    removerUsuarioTeste(usuario.id);
+  }
+});
+
+// Teste 110 — Verificar sessão após alteração da senha
+test('Deve verificar comportamento da sessao apos alteracao da senha', async () => {
+  const usuario = criarUsuarioTeste('PACIENTE');
+
+  try {
+    // Autenticar com a senha original
+    const login = await fetch(`${urlBase}/api/auth/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        email: usuario.email,
+        senha: usuario.senha
+      })
+    });
+
+    assert.equal(login.status, 200);
+
+    const cookie = login.headers.get('set-cookie');
+    assert.ok(cookie?.includes('saude.sid='));
+
+    // Alterar a senha diretamente no banco
+    const novaSenha = 'NovaSenhaSegura456!';
+    const novoHash = bcrypt.hashSync(novaSenha, 10);
+
+    db.prepare(`
+      UPDATE usuarios
+      SET senha_hash = ?
+      WHERE id = ?
+    `).run(novoHash, usuario.id);
+
+    // Verificar o comportamento da sessão existente
+    const sessaoAntiga = await fetch(`${urlBase}/api/auth/me`, {
+      headers: {
+        Cookie: cookie.split(';')[0]
+      }
+    });
+
+    // Comportamento atual: a sessão permanece autenticada
+    assert.equal(sessaoAntiga.status, 200);
+
+    const dadosSessao = await sessaoAntiga.json();
+    assert.equal(dadosSessao.usuario.id, usuario.id);
+
+    // A senha antiga não deve mais permitir novos logins
+    const loginAntigo = await fetch(`${urlBase}/api/auth/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        email: usuario.email,
+        senha: usuario.senha
+      })
+    });
+
+    assert.equal(loginAntigo.status, 401);
+
+    // A nova senha deve permitir autenticação
+    const novoLogin = await fetch(`${urlBase}/api/auth/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        email: usuario.email,
+        senha: novaSenha
+      })
+    });
+
+    assert.equal(novoLogin.status, 200);
+
+  } finally {
+    removerUsuarioTeste(usuario.id);
+  }
+});
