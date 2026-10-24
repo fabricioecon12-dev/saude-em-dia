@@ -5013,3 +5013,72 @@ test('Deve bloquear origem nao autorizada mesmo com administrador autenticado', 
     removerUsuarioTeste(administrador.id);
   }
 });
+
+
+// Teste de seguranca - Renovacao do identificador de sessao
+test('Deve renovar identificador de sessao apos novo login', async () => {
+  const usuario = criarUsuarioTeste('PACIENTE');
+
+  try {
+    const credenciais = JSON.stringify({
+      email: usuario.email,
+      senha: usuario.senha
+    });
+
+    const primeiroLogin = await fetch(`${urlBase}/api/auth/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: credenciais
+    });
+
+    assert.equal(primeiroLogin.status, 200);
+
+    const primeiroSetCookie = primeiroLogin.headers.get('set-cookie');
+    assert.ok(primeiroSetCookie?.includes('saude.sid='));
+
+    const cookieAntigo = primeiroSetCookie.split(';')[0];
+
+    const segundoLogin = await fetch(`${urlBase}/api/auth/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Cookie: cookieAntigo
+      },
+      body: credenciais
+    });
+
+    assert.equal(segundoLogin.status, 200);
+
+    const segundoSetCookie = segundoLogin.headers.get('set-cookie');
+    assert.ok(segundoSetCookie?.includes('saude.sid='));
+
+    const cookieNovo = segundoSetCookie.split(';')[0];
+
+    assert.notEqual(cookieNovo, cookieAntigo);
+
+    const acessoAntigo = await fetch(`${urlBase}/api/auth/me`, {
+      headers: {
+        Cookie: cookieAntigo
+      }
+    });
+
+    assert.equal(acessoAntigo.status, 401);
+
+    const acessoNovo = await fetch(`${urlBase}/api/auth/me`, {
+      headers: {
+        Cookie: cookieNovo
+      }
+    });
+
+    assert.equal(acessoNovo.status, 200);
+
+    const dados = await acessoNovo.json();
+
+    assert.equal(dados.usuario.id, usuario.id);
+
+  } finally {
+    removerUsuarioTeste(usuario.id);
+  }
+});

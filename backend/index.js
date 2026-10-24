@@ -90,18 +90,27 @@ const senhaValida = usuario
   });
 }
 
-req.session.usuario = {
-  id: usuario.id,
-  nome: usuario.nome,
-  email: usuario.email,
-  perfil: usuario.perfil
-};
+req.session.regenerate((erro) => {
+  if (erro) {
+    return res.status(500).json({
+      sucesso: false,
+      mensagem: 'Nao foi possivel iniciar a sessao.'
+    });
+  }
 
- return res.status(200).json({
-  sucesso: true,
-  mensagem: 'Login realizado com sucesso.',
-  usuario: req.session.usuario
+  req.session.usuario = {
+    id: usuario.id,
+    nome: usuario.nome,
+    email: usuario.email,
+    perfil: usuario.perfil
+  };
+
+  return res.status(200).json({
+    sucesso: true,
+    mensagem: 'Login realizado com sucesso.',
+    usuario: req.session.usuario
   });
+});
 
 });
 
