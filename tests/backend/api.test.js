@@ -4952,3 +4952,64 @@ test('Deve rejeitar atualizacao administrativa de origem nao autorizada', async 
 
   assert.equal(resposta.status, 403);
 });
+
+// Teste de seguranca - Bloquear origem nao autorizada com administrador autenticado
+test('Deve bloquear origem nao autorizada mesmo com administrador autenticado', async () => {
+  const paciente = criarUsuarioTeste('PACIENTE');
+  const administrador = criarUsuarioTeste('ADMIN');
+
+  try {
+    const resultado = db.prepare(`
+      INSERT INTO solicitacoes (usuario_id, especialidade)
+      VALUES (?, ?)
+    `).run(paciente.id, 'Cardiologia');
+
+    const solicitacaoId = Number(resultado.lastInsertRowid);
+
+    const login = await fetch(`${urlBase}/api/auth/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        email: administrador.email,
+        senha: administrador.senha
+      })
+    });
+
+    assert.equal(login.status, 200);
+
+    const cookie = login.headers.get('set-cookie');
+    assert.ok(cookie?.includes('saude.sid='));
+
+    const resposta = await fetch(
+      `${urlBase}/api/admin/solicitacoes/${solicitacaoId}/status`,
+      {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Cookie: cookie.split(';')[0],
+          Origin: 'https://site-nao-autorizado.example'
+        },
+        body: JSON.stringify({
+          status: 'AGENDADA'
+        })
+      }
+    );
+
+    assert.equal(resposta.status, 403);
+
+    const solicitacao = db.prepare(`
+      SELECT status
+      FROM solicitacoes
+      WHERE id = ?
+    `).get(solicitacaoId);
+
+    assert.equal(solicitacao.status, 'PENDENTE');
+
+  } finally {
+    removerSolicitacoesTeste(paciente.id);
+    removerUsuarioTeste(paciente.id);
+    removerUsuarioTeste(administrador.id);
+  }
+});
