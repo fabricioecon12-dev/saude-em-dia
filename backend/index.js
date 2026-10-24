@@ -22,7 +22,7 @@ app.use(session({
 }));
 app.use((req, res, next) => {
  const origem = req.headers.origin;
-const origensPermitidas = ['http://localhost:5173', 'http://localhost:4173'];
+const origensPermitidas = ['http://localhost:5173', 'http://localhost:4173', 'http://localhost:5174'];
 if (origensPermitidas.includes(origem)) {
   res.setHeader('Access-Control-Allow-Origin', origem);
 }
@@ -43,7 +43,7 @@ app.use((req, res, next) => {
 
   const origensPermitidas = [
     'http://localhost:5173',
-    'http://localhost:4173'
+    'http://localhost:4173', 'http://localhost:5174'
   ];
 
   if (origem && !origensPermitidas.includes(origem)) {
