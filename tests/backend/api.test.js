@@ -4933,3 +4933,22 @@ assert.equal(historicoAposFalha.total, 0);
   removerUsuarioTeste(administrador.id);
 }
 });
+
+// Teste de seguranca — Rejeitar origem nao autorizada
+test('Deve rejeitar atualizacao administrativa de origem nao autorizada', async () => {
+  const resposta = await fetch(
+    `${urlBase}/api/admin/solicitacoes/1/status`,
+    {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        Origin: 'https://site-nao-autorizado.example'
+      },
+      body: JSON.stringify({
+        status: 'AGENDADA'
+      })
+    }
+  );
+
+  assert.equal(resposta.status, 403);
+});

@@ -31,6 +31,30 @@ if (origensPermitidas.includes(origem)) {
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   next();
 });
+// Protecao adicional contra requisicoes de origens nao autorizadas
+app.use((req, res, next) => {
+  const metodosProtegidos = ['POST', 'PUT', 'PATCH', 'DELETE'];
+
+  if (!metodosProtegidos.includes(req.method)) {
+    return next();
+  }
+
+  const origem = req.headers.origin;
+
+  const origensPermitidas = [
+    'http://localhost:5173',
+    'http://localhost:4173'
+  ];
+
+  if (origem && !origensPermitidas.includes(origem)) {
+    return res.status(403).json({
+      sucesso: false,
+      mensagem: 'Origem da requisicao nao autorizada.'
+    });
+  }
+
+  next();
+});
 app.get('/', (req, res) => {
     res.json({ mensagem: 'API Saúde em Dia funcionando!' });
     });
