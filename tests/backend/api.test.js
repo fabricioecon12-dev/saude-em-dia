@@ -3955,6 +3955,20 @@ test('Deve configurar corretamente o cookie de sessao', async () => {
     assert.match(cookie, /httponly/i);
     assert.match(cookie, /samesite=lax/i);
     assert.match(cookie, /expires=/i);
+    const expiracao = cookie.match(/(?:^|;\s*)Expires=([^;]+)/i);
+
+    assert.ok(expiracao, 'O cookie deve informar a data de expiracao');
+
+    const dataExpiracao = Date.parse(expiracao[1]);
+
+    assert.ok(Number.isFinite(dataExpiracao), 'A data de expiracao deve ser valida');
+
+    const minutosRestantes = (dataExpiracao - Date.now()) / 60000;
+
+    assert.ok(
+      minutosRestantes >= 28 && minutosRestantes <= 31,
+      'O cookie deve expirar aproximadamente 30 minutos apos o login'
+    );
 
     // Em ambiente local HTTP, o cookie nao usa Secure
     assert.doesNotMatch(cookie, /(?:^|;\s*)secure(?:;|$)/i);
