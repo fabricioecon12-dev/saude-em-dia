@@ -4115,8 +4115,8 @@ test('Deve apresentar totais corretos no resumo administrativo', async () => {
     const totais = db.prepare(`
       SELECT
         COUNT(*) AS total,
-        SUM(CASE WHEN status = 'PENDENTE' THEN 1 ELSE 0 END) AS pendentes,
-        SUM(CASE WHEN status = 'AGENDADA' THEN 1 ELSE 0 END) AS agendadas
+        COALESCE(SUM(CASE WHEN status = 'PENDENTE' THEN 1 ELSE 0 END), 0) AS pendentes,
+        COALESCE(SUM(CASE WHEN status = 'AGENDADA' THEN 1 ELSE 0 END), 0) AS agendadas
       FROM solicitacoes
     `).get();
 
