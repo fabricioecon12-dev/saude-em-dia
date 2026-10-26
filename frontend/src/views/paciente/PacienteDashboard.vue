@@ -29,6 +29,35 @@ function formatarDataLocal(data) {
     minute: '2-digit'
   })
 }
+function formatarDataAgendamento(data) {
+  if (!data) return 'Não informada'
+
+  const partes = data.split('-')
+
+  if (partes.length !== 3) return 'Data inválida'
+
+  const [ano, mes, dia] = partes
+
+  if (!/^\d{4}$/.test(ano) ||
+      !/^\d{2}$/.test(mes) ||
+      !/^\d{2}$/.test(dia)) {
+    return 'Data inválida'
+  }
+
+  const dataValidada = new Date(Date.UTC(
+    Number(ano),
+    Number(mes) - 1,
+    Number(dia)
+  ))
+
+  if (dataValidada.getUTCFullYear() !== Number(ano) ||
+      dataValidada.getUTCMonth() !== Number(mes) - 1 ||
+      dataValidada.getUTCDate() !== Number(dia)) {
+    return 'Data inválida'
+  }
+
+  return `${dia}/${mes}/${ano}`
+}
 async function carregarSolicitacoes() {
   try {
     const resposta = await fetch(
@@ -168,6 +197,27 @@ onMounted(() => {
     {{ solicitacao.status }}
   </span>
 </p>
+  <div
+    v-if="solicitacao.data_agendamento && solicitacao.horario && solicitacao.unidade_saude"
+    class="detalhes-agendamento"
+  >
+    <h3>Consulta agendada</h3>
+
+    <p>
+      <strong>Data:</strong>
+      {{ formatarDataAgendamento(solicitacao.data_agendamento) }}
+    </p>
+
+    <p>
+      <strong>Horário:</strong>
+      {{ solicitacao.horario }}
+    </p>
+
+    <p>
+      <strong>Unidade de saúde:</strong>
+      {{ solicitacao.unidade_saude }}
+    </p>
+  </div>
 <button
   class="botao-historico"
   type="button"

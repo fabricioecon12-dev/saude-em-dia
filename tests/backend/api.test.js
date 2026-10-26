@@ -5606,3 +5606,181 @@ test('Deve rejeitar dados invalidos no cadastro de agendamento', async () => {
     removerUsuarioTeste(administrador.id);
   }
 });
+
+// ETAPA 35.22.4 - Testes de agendamentos do paciente
+
+test('Paciente deve visualizar dados do proprio agendamento', async () => {
+  const paciente = criarUsuarioTeste('PACIENTE');
+
+  try {
+    const resultado = db.prepare(`
+      INSERT INTO solicitacoes (usuario_id, especialidade, status)
+      VALUES (?, ?, ?)
+    `).run(paciente.id, 'Cardiologia', 'AGENDADA');
+
+    const solicitacaoId = Number(resultado.lastInsertRowid);
+
+    db.prepare(`
+      INSERT INTO agendamentos
+        (solicitacao_id, data_agendamento, horario, unidade_saude)
+      VALUES (?, ?, ?, ?)
+    `).run(solicitacaoId, '2026-12-15', '14:30', 'UBS Teste');
+
+    const login = await fetch(`${urlBase}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: paciente.email,
+        senha: paciente.senha
+      })
+    });
+
+    assert.equal(login.status, 200);
+
+    const cookie = login.headers.get('set-cookie');
+    assert.ok(cookie?.includes('saude.sid='));
+
+    const resposta = await fetch(`${urlBase}/api/paciente/solicitacoes`, {
+      headers: { Cookie: cookie.split(';')[0] }
+    });
+
+    const dados = await resposta.json();
+
+    assert.equal(resposta.status, 200);
+    assert.equal(dados.sucesso, true);
+
+    const solicitacao = dados.solicitacoes.find(
+      (item) => item.id === solicitacaoId
+    );
+
+    assert.ok(solicitacao);
+    assert.equal(solicitacao.status, 'AGENDADA');
+    assert.equal(solicitacao.data_agendamento, '2026-12-15');
+    assert.equal(solicitacao.horario, '14:30');
+    assert.equal(solicitacao.unidade_saude, 'UBS Teste');
+
+  } finally {
+    removerSolicitacoesTeste(paciente.id);
+    removerUsuarioTeste(paciente.id);
+  }
+});
+
+test('Paciente deve receber campos nulos quando nao houver agendamento', async () => {
+  const paciente = criarUsuarioTeste('PACIENTE');
+
+  try {
+    const resultado = db.prepare(`
+      INSERT INTO solicitacoes (usuario_id, especialidade)
+      VALUES (?, ?)
+    `).run(paciente.id, 'Neurologia');
+
+    const solicitacaoId = Number(resultado.lastInsertRowid);
+
+    const login = await fetch(`${urlBase}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: paciente.email,
+        senha: paciente.senha
+      })
+    });
+
+    assert.equal(login.status, 200);
+
+    const cookie = login.headers.get('set-cookie');
+    assert.ok(cookie?.includes('saude.sid='));
+
+    const resposta = await fetch(`${urlBase}/api/paciente/solicitacoes`, {
+      headers: { Cookie: cookie.split(';')[0] }
+    });
+
+    const dados = await resposta.json();
+
+    assert.equal(resposta.status, 200);
+
+    const solicitacao = dados.solicitacoes.find(
+      (item) => item.id === solicitacaoId
+    );
+
+    assert.ok(solicitacao);
+    assert.equal(solicitacao.status, 'PENDENTE');
+    assert.equal(solicitacao.data_agendamento, null);
+    assert.equal(solicitacao.horario, null);
+    assert.equal(solicitacao.unidade_saude, null);
+
+  } finally {
+    removerSolicitacoesTeste(paciente.id);
+    removerUsuarioTeste(paciente.id);
+  }
+});
+
+test('Paciente nao deve visualizar agendamento de outro paciente', async () => {
+  const pacienteA = criarUsuarioTeste('PACIENTE');
+  const pacienteB = criarUsuarioTeste('PACIENTE');
+
+  try {
+    const resultado = db.prepare(`
+      INSERT INTO solicitacoes (usuario_id, especialidade, status)
+      VALUES (?, ?, ?)
+    `).run(pacienteA.id, 'Dermatologia', 'AGENDADA');
+
+    const solicitacaoId = Number(resultado.lastInsertRowid);
+
+    db.prepare(`
+      INSERT INTO agendamentos
+        (solicitacao_id, data_agendamento, horario, unidade_saude)
+      VALUES (?, ?, ?, ?)
+    `).run(solicitacaoId, '2026-12-16', '09:00', 'UBS Privada Teste');
+
+    const login = await fetch(`${urlBase}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: pacienteB.email,
+        senha: pacienteB.senha
+      })
+    });
+
+    assert.equal(login.status, 200);
+
+    const cookie = login.headers.get('set-cookie');
+    assert.ok(cookie?.includes('saude.sid='));
+
+    const resposta = await fetch(`${urlBase}/api/paciente/solicitacoes`, {
+      headers: { Cookie: cookie.split(';')[0] }
+    });
+
+    const dados = await resposta.json();
+
+    assert.equal(resposta.status, 200);
+    assert.equal(dados.sucesso, true);
+    assert.ok(Array.isArray(dados.solicitacoes));
+
+    assert.equal(
+      dados.solicitacoes.some((item) => item.id === solicitacaoId),
+      false
+    );
+
+    assert.equal(
+      dados.solicitacoes.some(
+        (item) => item.unidade_saude === 'UBS Privada Teste'
+      ),
+      false
+    );
+
+  } finally {
+    removerSolicitacoesTeste(pacienteA.id);
+    removerSolicitacoesTeste(pacienteB.id);
+    removerUsuarioTeste(pacienteA.id);
+    removerUsuarioTeste(pacienteB.id);
+  }
+});
+
+test('Consulta de agendamentos deve exigir autenticacao do paciente', async () => {
+  const resposta = await fetch(`${urlBase}/api/paciente/solicitacoes`);
+
+  const dados = await resposta.json();
+
+  assert.equal(resposta.status, 401);
+  assert.equal(dados.sucesso, false);
+});

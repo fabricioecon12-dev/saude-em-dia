@@ -266,3 +266,57 @@
     font-size: 14px;
     text-align: center;
 }
+
+/* Cartao de informacoes da consulta agendada */
+.detalhes-agendamento {
+  margin-top: 20px;
+  padding: 20px 24px;
+  background-color: #edf8fa;
+  border: 1px solid #c8e5ea;
+  border-left: 4px solid #087f8c;
+  border-radius: 12px;
+  text-align: left;
+  box-shadow: 0 4px 12px rgba(8, 127, 140, 0.05);
+}
+
+.detalhes-agendamento h3 {
+  margin: 0 0 16px;
+  color: #075e69;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.detalhes-agendamento p {
+  margin: 0 0 10px;
+  color: #334155;
+  font-size: 14px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.detalhes-agendamento p:last-child {
+  margin-bottom: 0;
+}
+
+.detalhes-agendamento strong {
+  color: #10243c;
+  font-weight: 700;
+}
+
+/* Adaptacao para dispositivos moveis */
+@media (max-width: 600px) {
+  .detalhes-agendamento {
+    padding: 16px;
+    margin-top: 16px;
+    border-radius: 10px;
+  }
+
+  .detalhes-agendamento h3 {
+    font-size: 16px;
+  }
+
+  .detalhes-agendamento p {
+    font-size: 13px;
+  }
+}

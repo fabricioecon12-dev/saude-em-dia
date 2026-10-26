@@ -148,10 +148,19 @@ app.get('/api/paciente/solicitacoes', (req, res) => {
   }
 
   const solicitacoes = db.prepare(`
-    SELECT id, especialidade, data_solicitacao, status
-    FROM solicitacoes
-    WHERE usuario_id = ?
-    ORDER BY data_solicitacao DESC, id DESC
+    SELECT
+      s.id,
+      s.especialidade,
+      s.data_solicitacao,
+      s.status,
+      a.data_agendamento,
+      a.horario,
+      a.unidade_saude
+    FROM solicitacoes AS s
+    LEFT JOIN agendamentos AS a
+      ON a.solicitacao_id = s.id
+    WHERE s.usuario_id = ?
+    ORDER BY s.data_solicitacao DESC, s.id DESC
   `).all(usuario.id)
 
   return res.status(200).json({
