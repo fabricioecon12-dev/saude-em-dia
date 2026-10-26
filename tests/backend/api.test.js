@@ -6571,3 +6571,118 @@ test('Deve rejeitar reagendamento com versao desatualizada', async () => {
     removerUsuarioTeste(administradorA.id);
   }
 });
+
+// ETAPA 36.6-P.8-H.32-F - Historico administrativo de reagendamentos
+test('Administrador deve consultar historico completo apos reagendamento', async () => {
+  const administrador = criarUsuarioTeste('ADMIN');
+  const paciente = criarUsuarioTeste('PACIENTE');
+
+  try {
+    const resultadoSolicitacao = db.prepare(`
+      INSERT INTO solicitacoes (
+        usuario_id,
+        especialidade,
+        status
+      )
+      VALUES (?, ?, ?)
+    `).run(paciente.id, 'Cardiologia', 'AGENDADA');
+
+    const solicitacaoId = Number(resultadoSolicitacao.lastInsertRowid);
+
+    const resultadoAgendamento = db.prepare(`
+      INSERT INTO agendamentos (
+        solicitacao_id,
+        data_agendamento,
+        horario,
+        unidade_saude
+      )
+      VALUES (?, ?, ?, ?)
+    `).run(
+      solicitacaoId,
+      '2099-12-15',
+      '14:30',
+      'UBS Central'
+    );
+
+    const agendamentoId = Number(resultadoAgendamento.lastInsertRowid);
+
+    const login = await fetch(`${urlBase}/api/auth/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        email: administrador.email,
+        senha: administrador.senha
+      })
+    });
+
+    assert.equal(login.status, 200);
+
+    const cookieRecebido = login.headers.get('set-cookie');
+    assert.ok(cookieRecebido);
+
+    const cookie = cookieRecebido.split(';')[0];
+
+    const reagendamento = await fetch(
+      `${urlBase}/api/admin/solicitacoes/${solicitacaoId}/reagendamento`,
+      {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Cookie: cookie
+        },
+        body: JSON.stringify({
+          data_agendamento: '2099-12-18',
+          horario: '09:00',
+          unidade_saude: 'UBS Sao Jose',
+          versao: 1
+        })
+      }
+    );
+
+    assert.equal(reagendamento.status, 200);
+
+    const respostaHistorico = await fetch(
+      `${urlBase}/api/admin/solicitacoes/${solicitacaoId}/historico`,
+      {
+        method: 'GET',
+        headers: {
+          Cookie: cookie
+        }
+      }
+    );
+
+    const dados = await respostaHistorico.json();
+
+    assert.equal(respostaHistorico.status, 200);
+    assert.equal(dados.sucesso, true);
+    assert.equal(dados.solicitacao_id, solicitacaoId);
+
+    assert.ok(Array.isArray(dados.historico));
+    assert.ok(Array.isArray(dados.reagendamentos));
+
+    assert.equal(dados.reagendamentos.length, 1);
+
+    const registro = dados.reagendamentos[0];
+
+    assert.ok(Number.isSafeInteger(registro.id));
+    assert.equal(registro.agendamento_id, agendamentoId);
+
+    assert.equal(registro.data_anterior, '2099-12-15');
+    assert.equal(registro.horario_anterior, '14:30');
+    assert.equal(registro.unidade_anterior, 'UBS Central');
+
+    assert.equal(registro.data_nova, '2099-12-18');
+    assert.equal(registro.horario_novo, '09:00');
+    assert.equal(registro.unidade_nova, 'UBS Sao Jose');
+
+    assert.equal(registro.administrador_id, administrador.id);
+    assert.ok(registro.data_alteracao);
+
+  } finally {
+    removerSolicitacoesTeste(paciente.id);
+    removerUsuarioTeste(paciente.id);
+    removerUsuarioTeste(administrador.id);
+  }
+});
