@@ -6802,3 +6802,247 @@ test('Deve rejeitar reagendamento com dados identicos sem alterar historico', as
     removerUsuarioTeste(administrador.id);
   }
 });
+
+
+// =====================================================
+// ETAPA 36.6-P.8-H.34-F
+// Teste 157 — Integridade apos agendamento proibido
+// =====================================================
+
+test('Deve impedir agendamento por paciente e preservar solicitacao e historico', async () => {
+  const paciente = criarUsuarioTeste('PACIENTE');
+
+  try {
+    const resultado = db.prepare(`
+      INSERT INTO solicitacoes (usuario_id, especialidade)
+      VALUES (?, ?)
+    `).run(paciente.id, 'Cardiologia');
+
+    const solicitacaoId = Number(resultado.lastInsertRowid);
+
+    const login = await fetch(`${urlBase}/api/auth/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        email: paciente.email,
+        senha: paciente.senha
+      })
+    });
+
+    assert.equal(login.status, 200);
+
+    const cookieRecebido = login.headers.get('set-cookie');
+    assert.ok(cookieRecebido);
+
+    const cookie = cookieRecebido.split(';')[0];
+
+    const resposta = await fetch(
+      `${urlBase}/api/admin/solicitacoes/${solicitacaoId}/agendamento`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Cookie: cookie
+        },
+        body: JSON.stringify({
+          data_agendamento: '2099-12-15',
+          horario: '14:30',
+          unidade_saude: 'UBS Teste'
+        })
+      }
+    );
+
+    const dados = await resposta.json();
+
+    // 1. Pacientes nao podem executar agendamentos administrativos.
+    assert.equal(resposta.status, 403);
+    assert.equal(dados.sucesso, false);
+
+    // 2. Nenhum agendamento deve ser criado.
+    const agendamentos = db.prepare(`
+      SELECT id
+      FROM agendamentos
+      WHERE solicitacao_id = ?
+    `).all(solicitacaoId);
+
+    assert.equal(agendamentos.length, 0);
+
+    // 3. A solicitacao deve permanecer pendente.
+    const solicitacao = db.prepare(`
+      SELECT status
+      FROM solicitacoes
+      WHERE id = ?
+    `).get(solicitacaoId);
+
+    assert.ok(solicitacao);
+    assert.equal(solicitacao.status, 'PENDENTE');
+
+    // 4. Nenhum historico administrativo deve ser criado.
+    const historico = db.prepare(`
+      SELECT id
+      FROM historico_solicitacoes
+      WHERE solicitacao_id = ?
+    `).all(solicitacaoId);
+
+    assert.equal(historico.length, 0);
+
+  } finally {
+    removerSolicitacoesTeste(paciente.id);
+    removerUsuarioTeste(paciente.id);
+  }
+});
+
+
+// =====================================================
+// ETAPA 36.6-P.8-H.34-J
+// Teste 158 - Integridade apos reagendamento proibido
+// =====================================================
+
+test('Deve impedir reagendamento por paciente e preservar agendamento e historico', async () => {
+  const paciente = criarUsuarioTeste('PACIENTE');
+
+  try {
+    // Criar solicitacao inicialmente agendada.
+    const resultadoSolicitacao = db.prepare(`
+      INSERT INTO solicitacoes (usuario_id, especialidade, status)
+      VALUES (?, ?, ?)
+    `).run(paciente.id, 'Cardiologia', 'AGENDADA');
+
+    const solicitacaoId = Number(resultadoSolicitacao.lastInsertRowid);
+
+    // Criar agendamento inicial.
+    const resultadoAgendamento = db.prepare(`
+      INSERT INTO agendamentos (
+        solicitacao_id,
+        data_agendamento,
+        horario,
+        unidade_saude,
+        versao
+      )
+      VALUES (?, ?, ?, ?, ?)
+    `).run(
+      solicitacaoId,
+      '2099-12-15',
+      '09:00',
+      'UBS Central',
+      1
+    );
+
+    const agendamentoId = Number(resultadoAgendamento.lastInsertRowid);
+
+    // Registrar o estado inicial do agendamento.
+    const agendamentoAntes = db.prepare(`
+      SELECT
+        id,
+        solicitacao_id,
+        data_agendamento,
+        horario,
+        unidade_saude,
+        versao
+      FROM agendamentos
+      WHERE id = ?
+    `).get(agendamentoId);
+
+    assert.ok(agendamentoAntes);
+
+    const historicoAntes = db.prepare(`
+      SELECT COUNT(*) AS total
+      FROM historico_reagendamentos
+      WHERE agendamento_id = ?
+    `).get(agendamentoId);
+
+    assert.equal(historicoAntes.total, 0);
+
+    // Autenticar como paciente.
+    const login = await fetch(`${urlBase}/api/auth/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        email: paciente.email,
+        senha: paciente.senha
+      })
+    });
+
+    assert.equal(login.status, 200);
+
+    const cookieRecebido = login.headers.get('set-cookie');
+    assert.ok(cookieRecebido);
+
+    const cookie = cookieRecebido.split(';')[0];
+
+    // Tentar reagendar por uma rota administrativa.
+    const resposta = await fetch(
+      `${urlBase}/api/admin/solicitacoes/${solicitacaoId}/reagendamento`,
+      {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Cookie: cookie
+        },
+        body: JSON.stringify({
+          data_agendamento: '2099-12-20',
+          horario: '14:30',
+          unidade_saude: 'UBS Norte',
+          versao: 1
+        })
+      }
+    );
+
+    const dados = await resposta.json();
+
+    // 1. Acesso administrativo deve ser negado.
+    assert.equal(resposta.status, 403);
+    assert.equal(dados.sucesso, false);
+
+    // 2. Todos os dados do agendamento devem permanecer intactos.
+    const agendamentoDepois = db.prepare(`
+      SELECT
+        id,
+        solicitacao_id,
+        data_agendamento,
+        horario,
+        unidade_saude,
+        versao
+      FROM agendamentos
+      WHERE id = ?
+    `).get(agendamentoId);
+
+    assert.deepEqual(agendamentoDepois, agendamentoAntes);
+
+    // 3. Nenhum historico de reagendamento deve ser criado.
+    const historicoDepois = db.prepare(`
+      SELECT COUNT(*) AS total
+      FROM historico_reagendamentos
+      WHERE agendamento_id = ?
+    `).get(agendamentoId);
+
+    assert.equal(historicoDepois.total, historicoAntes.total);
+
+    // 4. A solicitacao deve permanecer agendada.
+    const solicitacao = db.prepare(`
+      SELECT status
+      FROM solicitacoes
+      WHERE id = ?
+    `).get(solicitacaoId);
+
+    assert.ok(solicitacao);
+    assert.equal(solicitacao.status, 'AGENDADA');
+
+    // 5. Nenhum historico de status deve ser criado.
+    const historicoStatus = db.prepare(`
+      SELECT COUNT(*) AS total
+      FROM historico_solicitacoes
+      WHERE solicitacao_id = ?
+    `).get(solicitacaoId);
+
+    assert.equal(historicoStatus.total, 0);
+
+  } finally {
+    removerSolicitacoesTeste(paciente.id);
+    removerUsuarioTeste(paciente.id);
+  }
+});
