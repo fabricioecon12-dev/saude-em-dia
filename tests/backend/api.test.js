@@ -1,4 +1,4 @@
-﻿const { test, before, after } = require('node:test');
+const { test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 
 const app = require('../../backend/index');
@@ -38,6 +38,15 @@ function removerSolicitacoesTeste(usuarioId) {
   `).all(usuarioId);
 
   for (const solicitacao of solicitacoes) {
+        db.prepare(`
+      DELETE FROM historico_reagendamentos
+      WHERE agendamento_id IN (
+        SELECT id
+        FROM agendamentos
+        WHERE solicitacao_id = ?
+      )
+    `).run(solicitacao.id);
+
         db.prepare(`
       DELETE FROM agendamentos
       WHERE solicitacao_id = ?
@@ -5783,4 +5792,461 @@ test('Consulta de agendamentos deve exigir autenticacao do paciente', async () =
 
   assert.equal(resposta.status, 401);
   assert.equal(dados.sucesso, false);
+});
+// ETAPA 36.6-E - Testes da API de reagendamento
+test('Deve bloquear reagendamento sem autenticacao', async () => {
+  const resposta = await fetch(
+    `${urlBase}/api/admin/solicitacoes/1/reagendamento`,
+    {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        data_agendamento: '2026-12-18',
+        horario: '09:00',
+        unidade_saude: 'UBS Teste'
+      })
+    }
+  );
+
+  const dados = await resposta.json();
+
+  assert.equal(resposta.status, 401);
+  assert.equal(dados.sucesso, false);
+  assert.equal(dados.mensagem, 'Usuário não autenticado.');
+});
+// ETAPA 36.6-G - Controle de acesso ao reagendamento
+test('Deve bloquear reagendamento realizado por paciente', async () => {
+  const usuario = criarUsuarioTeste('PACIENTE');
+
+  try {
+    const login = await fetch(`${urlBase}/api/auth/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        email: usuario.email,
+        senha: usuario.senha
+      })
+    });
+
+    assert.equal(login.status, 200);
+
+    const cookieRecebido = login.headers.get('set-cookie');
+
+    assert.ok(cookieRecebido);
+
+    const cookie = cookieRecebido.split(';')[0];
+
+    const resposta = await fetch(
+      `${urlBase}/api/admin/solicitacoes/1/reagendamento`,
+      {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Cookie: cookie
+        },
+        body: JSON.stringify({
+          data_agendamento: '2026-12-18',
+          horario: '09:00',
+          unidade_saude: 'UBS Teste'
+        })
+      }
+    );
+
+    const dados = await resposta.json();
+
+    assert.equal(resposta.status, 403);
+    assert.equal(dados.sucesso, false);
+    assert.equal(
+      dados.mensagem,
+      'Acesso permitido somente para administradores.'
+    );
+
+  } finally {
+    removerUsuarioTeste(usuario.id);
+  }
+});
+// ETAPA 36.6-H - Validacao dos identificadores de reagendamento
+test('Deve rejeitar identificadores invalidos no reagendamento', async () => {
+  const administrador = criarUsuarioTeste('ADMIN');
+
+  try {
+    const login = await fetch(`${urlBase}/api/auth/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        email: administrador.email,
+        senha: administrador.senha
+      })
+    });
+
+    assert.equal(login.status, 200);
+
+    const cookieRecebido = login.headers.get('set-cookie');
+
+    assert.ok(cookieRecebido);
+
+    const cookie = cookieRecebido.split(';')[0];
+
+    const identificadoresInvalidos = [
+      'abc',
+      '0',
+      '-1',
+      '1.5',
+      '999999999999999999999'
+    ];
+
+    for (const id of identificadoresInvalidos) {
+      const resposta = await fetch(
+        `${urlBase}/api/admin/solicitacoes/${id}/reagendamento`,
+        {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            Cookie: cookie
+          },
+          body: JSON.stringify({
+            data_agendamento: '2026-12-18',
+            horario: '09:00',
+            unidade_saude: 'UBS Teste'
+          })
+        }
+      );
+
+      const dados = await resposta.json();
+
+      assert.equal(
+        resposta.status,
+        400,
+        `O identificador ${id} deveria retornar HTTP 400.`
+      );
+
+      assert.equal(dados.sucesso, false);
+
+      assert.equal(
+        dados.mensagem,
+        'ID da solicitação inválido.'
+      );
+    }
+
+  } finally {
+    removerUsuarioTeste(administrador.id);
+  }
+});
+// ETAPA 36.6-I - Solicitacao inexistente
+test('Deve rejeitar reagendamento de solicitacao inexistente', async () => {
+  const administrador = criarUsuarioTeste('ADMIN');
+
+  try {
+    const login = await fetch(`${urlBase}/api/auth/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        email: administrador.email,
+        senha: administrador.senha
+      })
+    });
+
+    assert.equal(login.status, 200);
+
+    const cookieRecebido = login.headers.get('set-cookie');
+    assert.ok(cookieRecebido);
+
+    const cookie = cookieRecebido.split(';')[0];
+
+    const maiorId = db.prepare(`
+      SELECT COALESCE(MAX(id), 0) AS maior
+      FROM solicitacoes
+    `).get().maior;
+
+    const idInexistente = maiorId + 1000;
+
+    const totalAntes = db.prepare(`
+      SELECT COUNT(*) AS total
+      FROM historico_reagendamentos
+    `).get().total;
+
+    const resposta = await fetch(
+      `${urlBase}/api/admin/solicitacoes/${idInexistente}/reagendamento`,
+      {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Cookie: cookie
+        },
+        body: JSON.stringify({
+          data_agendamento: '2026-12-18',
+          horario: '09:00',
+          unidade_saude: 'UBS Teste'
+        })
+      }
+    );
+
+    const dados = await resposta.json();
+
+    assert.equal(resposta.status, 404);
+    assert.equal(dados.sucesso, false);
+    assert.equal(
+      dados.mensagem,
+      'Solicitação não encontrada.'
+    );
+
+    const totalDepois = db.prepare(`
+      SELECT COUNT(*) AS total
+      FROM historico_reagendamentos
+    `).get().total;
+
+    assert.equal(totalDepois, totalAntes);
+
+    const agendamentoCriado = db.prepare(`
+      SELECT id
+      FROM agendamentos
+      WHERE solicitacao_id = ?
+    `).get(idInexistente);
+
+    assert.equal(agendamentoCriado, undefined);
+
+  } finally {
+    removerUsuarioTeste(administrador.id);
+  }
+});
+// ETAPA 36.6-K - Bloqueio de reagendamento de solicitacoes pendentes
+test('Deve impedir reagendamento de solicitacao pendente', async () => {
+  const administrador = criarUsuarioTeste('ADMIN');
+  const paciente = criarUsuarioTeste('PACIENTE');
+
+  try {
+    const resultado = db.prepare(`
+      INSERT INTO solicitacoes (
+        usuario_id,
+        especialidade,
+        status
+      )
+      VALUES (?, ?, ?)
+    `).run(paciente.id, 'Cardiologia', 'PENDENTE');
+
+    const solicitacaoId = Number(resultado.lastInsertRowid);
+
+    const login = await fetch(`${urlBase}/api/auth/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        email: administrador.email,
+        senha: administrador.senha
+      })
+    });
+
+    assert.equal(login.status, 200);
+
+    const cookieRecebido = login.headers.get('set-cookie');
+
+    assert.ok(cookieRecebido);
+
+    const cookie = cookieRecebido.split(';')[0];
+
+    const historicoAntes = db.prepare(`
+      SELECT COUNT(*) AS total
+      FROM historico_reagendamentos
+    `).get().total;
+
+    const resposta = await fetch(
+      `${urlBase}/api/admin/solicitacoes/${solicitacaoId}/reagendamento`,
+      {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Cookie: cookie
+        },
+        body: JSON.stringify({
+          data_agendamento: '2099-12-18',
+          horario: '09:00',
+          unidade_saude: 'UBS Teste'
+        })
+      }
+    );
+
+    const dados = await resposta.json();
+
+    assert.equal(resposta.status, 409);
+    assert.equal(dados.sucesso, false);
+
+    const solicitacaoAtualizada = db.prepare(`
+      SELECT status
+      FROM solicitacoes
+      WHERE id = ?
+    `).get(solicitacaoId);
+
+    assert.equal(solicitacaoAtualizada.status, 'PENDENTE');
+
+    const agendamento = db.prepare(`
+      SELECT id
+      FROM agendamentos
+      WHERE solicitacao_id = ?
+    `).get(solicitacaoId);
+
+    assert.equal(agendamento, undefined);
+
+    const historicoDepois = db.prepare(`
+      SELECT COUNT(*) AS total
+      FROM historico_reagendamentos
+    `).get().total;
+
+    assert.equal(historicoDepois, historicoAntes);
+
+  } finally {
+    removerSolicitacoesTeste(paciente.id);
+    removerUsuarioTeste(paciente.id);
+    removerUsuarioTeste(administrador.id);
+  }
+});
+// ETAPA 36.6-M - Reagendamento efetivo e rastreabilidade
+test('Deve reagendar consulta e registrar historico completo', async () => {
+  const administrador = criarUsuarioTeste('ADMIN');
+  const paciente = criarUsuarioTeste('PACIENTE');
+
+  try {
+    const resultadoSolicitacao = db.prepare(`
+      INSERT INTO solicitacoes (
+        usuario_id,
+        especialidade,
+        status
+      )
+      VALUES (?, ?, ?)
+    `).run(paciente.id, 'Cardiologia', 'AGENDADA');
+
+    const solicitacaoId = Number(resultadoSolicitacao.lastInsertRowid);
+
+    const resultadoAgendamento = db.prepare(`
+      INSERT INTO agendamentos (
+        solicitacao_id,
+        data_agendamento,
+        horario,
+        unidade_saude
+      )
+      VALUES (?, ?, ?, ?)
+    `).run(
+      solicitacaoId,
+      '2099-12-15',
+      '14:30',
+      'UBS Central'
+    );
+
+    const agendamentoId = Number(resultadoAgendamento.lastInsertRowid);
+
+    const login = await fetch(`${urlBase}/api/auth/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        email: administrador.email,
+        senha: administrador.senha
+      })
+    });
+
+    assert.equal(login.status, 200);
+
+    const cookieRecebido = login.headers.get('set-cookie');
+    assert.ok(cookieRecebido);
+
+    const cookie = cookieRecebido.split(';')[0];
+
+    const resposta = await fetch(
+      `${urlBase}/api/admin/solicitacoes/${solicitacaoId}/reagendamento`,
+      {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Cookie: cookie
+        },
+        body: JSON.stringify({
+          data_agendamento: '2099-12-18',
+          horario: '09:00',
+          unidade_saude: 'UBS São José'
+        })
+      }
+    );
+
+    const dados = await resposta.json();
+
+    // 1. Resposta da API
+    assert.equal(resposta.status, 200);
+    assert.equal(dados.sucesso, true);
+    assert.equal(dados.mensagem, 'Consulta reagendada com sucesso.');
+
+    // 2. Identidade e dados retornados
+    assert.equal(dados.agendamento.id, agendamentoId);
+    assert.equal(dados.agendamento.solicitacao_id, solicitacaoId);
+    assert.equal(dados.agendamento.data_agendamento, '2099-12-18');
+    assert.equal(dados.agendamento.horario, '09:00');
+    assert.equal(dados.agendamento.unidade_saude, 'UBS São José');
+
+    // 3. Dados persistidos no banco
+    const agendamentoAtualizado = db.prepare(`
+      SELECT *
+      FROM agendamentos
+      WHERE solicitacao_id = ?
+    `).get(solicitacaoId);
+
+    assert.ok(agendamentoAtualizado);
+    assert.equal(agendamentoAtualizado.id, agendamentoId);
+    assert.equal(agendamentoAtualizado.data_agendamento, '2099-12-18');
+    assert.equal(agendamentoAtualizado.horario, '09:00');
+    assert.equal(agendamentoAtualizado.unidade_saude, 'UBS São José');
+
+    // 4. Nao deve criar outro agendamento
+    const quantidadeAgendamentos = db.prepare(`
+      SELECT COUNT(*) AS total
+      FROM agendamentos
+      WHERE solicitacao_id = ?
+    `).get(solicitacaoId);
+
+    assert.equal(quantidadeAgendamentos.total, 1);
+
+    // 5. Status deve permanecer AGENDADA
+    const solicitacao = db.prepare(`
+      SELECT status
+      FROM solicitacoes
+      WHERE id = ?
+    `).get(solicitacaoId);
+
+    assert.equal(solicitacao.status, 'AGENDADA');
+
+    // 6. Historico completo
+    const historicos = db.prepare(`
+      SELECT *
+      FROM historico_reagendamentos
+      WHERE agendamento_id = ?
+    `).all(agendamentoId);
+
+    assert.equal(historicos.length, 1);
+
+    const historico = historicos[0];
+
+    assert.equal(historico.agendamento_id, agendamentoId);
+    assert.equal(historico.data_anterior, '2099-12-15');
+    assert.equal(historico.horario_anterior, '14:30');
+    assert.equal(historico.unidade_anterior, 'UBS Central');
+
+    assert.equal(historico.data_nova, '2099-12-18');
+    assert.equal(historico.horario_novo, '09:00');
+    assert.equal(historico.unidade_nova, 'UBS São José');
+
+    assert.equal(historico.administrador_id, administrador.id);
+    assert.ok(historico.data_alteracao);
+
+  } finally {
+    removerSolicitacoesTeste(paciente.id);
+    removerUsuarioTeste(paciente.id);
+    removerUsuarioTeste(administrador.id);
+  }
 });

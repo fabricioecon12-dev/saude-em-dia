@@ -42,3 +42,20 @@ db.exec(`
     FOREIGN KEY (solicitacao_id) REFERENCES solicitacoes(id)
   );
 `);
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS historico_reagendamentos (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    agendamento_id INTEGER NOT NULL,
+    data_anterior TEXT NOT NULL,
+    horario_anterior TEXT NOT NULL,
+    unidade_anterior TEXT NOT NULL,
+    data_nova TEXT NOT NULL,
+    horario_novo TEXT NOT NULL,
+    unidade_nova TEXT NOT NULL,
+    administrador_id INTEGER NOT NULL,
+    data_alteracao TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (agendamento_id) REFERENCES agendamentos(id),
+    FOREIGN KEY (administrador_id) REFERENCES usuarios(id)
+  );
+`);
