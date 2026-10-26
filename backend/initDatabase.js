@@ -30,3 +30,15 @@ db.exec(`
   FOREIGN KEY (solicitacao_id) REFERENCES solicitacoes(id)
   );
 `);
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS agendamentos (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    solicitacao_id INTEGER NOT NULL UNIQUE,
+    data_agendamento TEXT NOT NULL,
+    horario TEXT NOT NULL,
+    unidade_saude TEXT NOT NULL,
+    data_criacao TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (solicitacao_id) REFERENCES solicitacoes(id)
+  );
+`);

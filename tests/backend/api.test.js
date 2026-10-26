@@ -1,4 +1,4 @@
-const { test, before, after } = require('node:test');
+﻿const { test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 
 const app = require('../../backend/index');
@@ -38,6 +38,11 @@ function removerSolicitacoesTeste(usuarioId) {
   `).all(usuarioId);
 
   for (const solicitacao of solicitacoes) {
+        db.prepare(`
+      DELETE FROM agendamentos
+      WHERE solicitacao_id = ?
+    `).run(solicitacao.id);
+
     db.prepare(`
       DELETE FROM historico_solicitacoes
       WHERE solicitacao_id = ?
@@ -1499,30 +1504,37 @@ test('Deve permitir administrador agendar solicitacao medica', async () => {
     const cookie = login.headers.get('set-cookie');
     assert.ok(cookie?.includes('saude.sid='));
 
-    const resposta = await fetch(
-      `${urlBase}/api/admin/solicitacoes/${solicitacaoId}/status`,
-      {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          Cookie: cookie.split(';')[0]
-        },
-        body: JSON.stringify({
-          status: 'AGENDADA'
-        })
-      }
-    );
+   const resposta = await fetch(
+  `${urlBase}/api/admin/solicitacoes/${solicitacaoId}/agendamento`,
+  {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Cookie: cookie.split(';')[0]
+    },
+    body: JSON.stringify({
+      data_agendamento: '2026-12-15',
+      horario: '14:30',
+      unidade_saude: 'UBS Teste'
+    })
+  }
+);
 
     const dados = await resposta.json();
 
-    assert.equal(resposta.status, 200);
-    assert.equal(dados.sucesso, true);
-    assert.equal(
-      dados.mensagem,
-      'Status da solicitação atualizado com sucesso.'
-    );
-    assert.equal(dados.solicitacao.id, solicitacaoId);
-    assert.equal(dados.solicitacao.status, 'AGENDADA');
+    assert.equal(resposta.status, 201);
+assert.equal(dados.sucesso, true);
+
+const agendamento = db.prepare(`
+  SELECT *
+  FROM agendamentos
+  WHERE solicitacao_id = ?
+`).get(solicitacaoId);
+
+assert.ok(agendamento);
+assert.equal(agendamento.data_agendamento, '2026-12-15');
+assert.equal(agendamento.horario, '14:30');
+assert.equal(agendamento.unidade_saude, 'UBS Teste');
 
     const solicitacao = db.prepare(`
       SELECT status
@@ -1730,7 +1742,7 @@ test('Deve rejeitar atualizacao de solicitacao inexistente', async () => {
           Cookie: cookie.split(';')[0]
         },
         body: JSON.stringify({
-          status: 'AGENDADA'
+          status: 'CONCLUIDA'
         })
       }
     );
@@ -1795,7 +1807,7 @@ test('Deve registrar duas alteracoes consecutivas no historico', async () => {
       method: 'PATCH',
       headers,
       body: JSON.stringify({
-        status: 'AGENDADA'
+        status: 'CANCELADA'
       })
     });
 
@@ -1829,9 +1841,9 @@ test('Deve registrar duas alteracoes consecutivas no historico', async () => {
     assert.equal(historico.length, 2);
 
     assert.equal(historico[0].status_anterior, 'PENDENTE');
-    assert.equal(historico[0].status_novo, 'AGENDADA');
+    assert.equal(historico[0].status_novo, 'CANCELADA');
 
-    assert.equal(historico[1].status_anterior, 'AGENDADA');
+    assert.equal(historico[1].status_anterior, 'CANCELADA');
     assert.equal(historico[1].status_novo, 'CONCLUIDA');
 
   } finally {
@@ -1871,7 +1883,7 @@ test('Deve rejeitar ID nao numerico na atualizacao de status', async () => {
           Cookie: cookie.split(';')[0]
         },
         body: JSON.stringify({
-          status: 'AGENDADA'
+          status: 'CONCLUIDA'
         })
       }
     );
@@ -1920,7 +1932,7 @@ test('Deve rejeitar ID zero na atualizacao de status', async () => {
           Cookie: cookie.split(';')[0]
         },
         body: JSON.stringify({
-          status: 'AGENDADA'
+          status: 'CONCLUIDA'
         })
       }
     );
@@ -1969,7 +1981,7 @@ test('Deve rejeitar ID negativo na atualizacao de status', async () => {
           Cookie: cookie.split(';')[0]
         },
         body: JSON.stringify({
-          status: 'AGENDADA'
+          status: 'CONCLUIDA'
         })
       }
     );
@@ -2018,7 +2030,7 @@ test('Deve rejeitar ID decimal na atualizacao de status', async () => {
           Cookie: cookie.split(';')[0]
         },
         body: JSON.stringify({
-          status: 'AGENDADA'
+          status: 'CONCLUIDA'
         })
       }
     );
@@ -2067,7 +2079,7 @@ test('Deve rejeitar ID acima do limite seguro na atualizacao de status', async (
           Cookie: cookie.split(';')[0]
         },
         body: JSON.stringify({
-          status: 'AGENDADA'
+          status: 'CONCLUIDA'
         })
       }
     );
@@ -2737,7 +2749,7 @@ test('Deve mostrar ao paciente o status atualizado pelo administrador', async ()
           Cookie: cookieAdmin.split(';')[0]
         },
         body: JSON.stringify({
-          status: 'AGENDADA'
+          status: 'CONCLUIDA'
         })
       }
     );
@@ -2784,7 +2796,7 @@ test('Deve mostrar ao paciente o status atualizado pelo administrador', async ()
     `).get(solicitacaoId);
 
     assert.ok(solicitacao);
-    assert.equal(solicitacao.status, 'AGENDADA');
+    assert.equal(solicitacao.status, 'CONCLUIDA');
 
   } finally {
     removerSolicitacoesTeste(paciente.id);
@@ -2834,7 +2846,7 @@ test('Deve permitir ao paciente consultar historico apos atualizacao administrat
           Cookie: cookieAdmin.split(';')[0]
         },
         body: JSON.stringify({
-          status: 'AGENDADA'
+          status: 'CONCLUIDA'
         })
       }
     );
@@ -2884,7 +2896,7 @@ test('Deve permitir ao paciente consultar historico apos atualizacao administrat
 
     assert.equal(
       dados.historico[0].status_novo,
-      'AGENDADA'
+      'CONCLUIDA'
     );
 
   } finally {
@@ -3202,7 +3214,7 @@ test('Deve manter consistencia entre status e historico em atualizacoes concorre
           'Content-Type': 'application/json',
           Cookie: cookie.split(';')[0]
         },
-        body: JSON.stringify({ status: 'AGENDADA' })
+        body: JSON.stringify({ status: 'CANCELADA' })
       }),
       fetch(`${urlBase}/api/admin/solicitacoes/${solicitacaoId}/status`, {
         method: 'PATCH',
@@ -4163,22 +4175,24 @@ test('Deve atualizar resumo administrativo apos mudar status', async () => {
     assert.equal(respostaAntes.status, 200);
     const antes = await respostaAntes.json();
 
-    // Alterar a solicitacao para AGENDADA
-    const atualizacao = await fetch(
-      `${urlBase}/api/admin/solicitacoes/${solicitacaoId}/status`,
-      {
-        method: 'PATCH',
-        headers: {
-          ...headersSessao,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          status: 'AGENDADA'
-        })
-      }
-    );
+   // Agendar a solicitacao pela rota especifica
+const atualizacao = await fetch(
+  `${urlBase}/api/admin/solicitacoes/${solicitacaoId}/agendamento`,
+  {
+    method: 'POST',
+    headers: {
+      ...headersSessao,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      data_agendamento: '2026-12-15',
+      horario: '14:30',
+      unidade_saude: 'UBS Teste'
+    })
+  }
+);
 
-    assert.equal(atualizacao.status, 200);
+    assert.equal(atualizacao.status, 201);
 
     // Consultar indicadores apos a alteracao
     const respostaDepois = await fetch(
@@ -4909,7 +4923,7 @@ const respostaAtualizacao = await fetch(
       Cookie: cookieAdmin.split(';')[0]
     },
     body: JSON.stringify({
-      status: 'AGENDADA'
+      status: 'CONCLUIDA'
     })
   }
 );
@@ -4959,7 +4973,7 @@ test('Deve rejeitar atualizacao administrativa de origem nao autorizada', async 
         Origin: 'https://site-nao-autorizado.example'
       },
       body: JSON.stringify({
-        status: 'AGENDADA'
+        status: 'CONCLUIDA'
       })
     }
   );
@@ -5094,5 +5108,501 @@ test('Deve renovar identificador de sessao apos novo login', async () => {
 
   } finally {
     removerUsuarioTeste(usuario.id);
+  }
+});
+
+// =====================================================
+// TESTES DA API DE AGENDAMENTOS
+test('Deve bloquear agendamento sem autenticacao', async () => {
+  const resposta = await fetch(
+    `${urlBase}/api/admin/solicitacoes/1/agendamento`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        data_agendamento: '2026-12-15',
+        horario: '14:30',
+        unidade_saude: 'UBS Teste'
+      })
+    }
+  );
+
+  const dados = await resposta.json();
+
+  assert.equal(resposta.status, 401);
+  assert.equal(dados.sucesso, false);
+});
+
+test('Deve bloquear agendamento realizado por paciente', async () => {
+  const usuario = criarUsuarioTeste('PACIENTE');
+
+  try {
+    const login = await fetch(`${urlBase}/api/auth/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        email: usuario.email,
+        senha: usuario.senha
+      })
+    });
+
+    assert.equal(login.status, 200);
+
+    const cookie = login.headers.get('set-cookie').split(';')[0];
+
+    const resposta = await fetch(
+      `${urlBase}/api/admin/solicitacoes/1/agendamento`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Cookie: cookie
+        },
+        body: JSON.stringify({
+          data_agendamento: '2026-12-15',
+          horario: '14:30',
+          unidade_saude: 'UBS Teste'
+        })
+      }
+    );
+
+    const dados = await resposta.json();
+
+    assert.equal(resposta.status, 403);
+    assert.equal(dados.sucesso, false);
+
+  } finally {
+    removerUsuarioTeste(usuario.id);
+  }
+});
+
+test('Deve rejeitar agendamento com ID de solicitacao invalido', async () => {
+  const usuario = criarUsuarioTeste('ADMIN');
+
+  try {
+
+        const login = await fetch(`${urlBase}/api/auth/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        email: usuario.email,
+        senha: usuario.senha
+      })
+    });
+
+    assert.equal(login.status, 200);
+        const cookie = login.headers.get('set-cookie').split(';')[0];
+            const resposta = await fetch(
+      `${urlBase}/api/admin/solicitacoes/abc/agendamento`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Cookie: cookie
+        },
+        body: JSON.stringify({
+          data_agendamento: '2026-12-15',
+          horario: '14:30',
+          unidade_saude: 'UBS Teste'
+        })
+      }
+    );
+        const dados = await resposta.json();
+
+    assert.equal(resposta.status, 400);
+    assert.equal(dados.sucesso, false);
+    assert.equal(dados.mensagem, 'ID da solicitação inválido.');
+
+  } finally {
+    removerUsuarioTeste(usuario.id);
+  }
+});
+
+test('Deve rejeitar agendamento de solicitacao inexistente', async () => {
+  const usuario = criarUsuarioTeste('ADMIN');
+
+  try {
+
+        const login = await fetch(`${urlBase}/api/auth/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        email: usuario.email,
+        senha: usuario.senha
+      })
+    });
+
+    assert.equal(login.status, 200);
+        const cookie = login.headers.get('set-cookie').split(';')[0];
+            const idInexistente = 999999999;
+
+    const resposta = await fetch(
+      `${urlBase}/api/admin/solicitacoes/${idInexistente}/agendamento`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Cookie: cookie
+        },
+        body: JSON.stringify({
+          data_agendamento: '2026-12-15',
+          horario: '14:30',
+          unidade_saude: 'UBS Teste'
+        })
+      }
+    );
+        const dados = await resposta.json();
+
+    assert.equal(resposta.status, 404);
+    assert.equal(dados.sucesso, false);
+    assert.equal(dados.mensagem, 'Solicitação não encontrada.');
+
+  } finally {
+    removerUsuarioTeste(usuario.id);
+  }
+});
+
+test('Deve permitir administrador cadastrar agendamento com sucesso', async () => {
+    const administrador = criarUsuarioTeste('ADMIN');
+    const paciente = criarUsuarioTeste('PACIENTE');
+
+      try {
+
+       const resultado = db.prepare(`
+          INSERT INTO solicitacoes (usuario_id, especialidade)
+          VALUES (?, ?)
+    `).run(paciente.id, 'Cardiologia');
+
+    const solicitacaoId = Number(resultado.lastInsertRowid);
+        const login = await fetch(`${urlBase}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: administrador.email,
+        senha: administrador.senha
+      })
+    });
+
+    assert.equal(login.status, 200);
+
+    const cookie = login.headers.get('set-cookie');
+    assert.ok(cookie?.includes('saude.sid'));
+        const resposta = await fetch(
+      `${urlBase}/api/admin/solicitacoes/${solicitacaoId}/agendamento`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Cookie: cookie
+        },
+        body: JSON.stringify({
+          data_agendamento: '2026-12-15',
+          horario: '14:30',
+          unidade_saude: 'UBS Teste'
+        })
+      }
+    );
+
+        const dados = await resposta.json();
+
+    assert.equal(resposta.status, 201);
+    assert.equal(dados.sucesso, true);
+        const agendamento = db.prepare(`
+      SELECT *
+      FROM agendamentos
+      WHERE solicitacao_id = ?
+    `).get(solicitacaoId);
+
+    assert.ok(agendamento);
+    assert.equal(agendamento.solicitacao_id, solicitacaoId);
+    assert.equal(agendamento.data_agendamento, '2026-12-15');
+    assert.equal(agendamento.horario, '14:30');
+    assert.equal(agendamento.unidade_saude, 'UBS Teste');
+        const solicitacaoAtualizada = db.prepare(`
+      SELECT status
+      FROM solicitacoes
+      WHERE id = ?
+    `).get(solicitacaoId);
+
+    assert.ok(solicitacaoAtualizada);
+    assert.equal(solicitacaoAtualizada.status, 'AGENDADA');
+
+        const historico = db.prepare(`
+      SELECT *
+      FROM historico_solicitacoes
+      WHERE solicitacao_id = ?
+        AND status_novo = ?
+    `).get(solicitacaoId, 'AGENDADA');
+
+    assert.ok(historico);
+    assert.equal(historico.solicitacao_id, solicitacaoId);
+    assert.equal(historico.status_novo, 'AGENDADA');
+
+  } finally {
+    removerSolicitacoesTeste(paciente.id);
+    removerUsuarioTeste(paciente.id);
+    removerUsuarioTeste(administrador.id);
+  }
+
+});
+
+test('Deve impedir agendamento duplicado para a mesma solicitacao', async () => {
+  const administrador = criarUsuarioTeste('ADMIN');
+  const paciente = criarUsuarioTeste('PACIENTE');
+
+  try {
+
+        const resultado = db.prepare(`
+      INSERT INTO solicitacoes (usuario_id, especialidade)
+      VALUES (?, ?)
+    `).run(paciente.id, 'Cardiologia');
+
+    const solicitacaoId = Number(resultado.lastInsertRowid);
+
+        const login = await fetch(`${urlBase}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: administrador.email,
+        senha: administrador.senha
+      })
+    });
+
+    assert.equal(login.status, 200);
+
+    const cookie = login.headers.get('set-cookie');
+    assert.ok(cookie?.includes('saude.sid'));
+
+        const primeiroAgendamento = await fetch(
+      `${urlBase}/api/admin/solicitacoes/${solicitacaoId}/agendamento`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Cookie: cookie
+        },
+        body: JSON.stringify({
+          data_agendamento: '2026-12-15',
+          horario: '14:30',
+          unidade_saude: 'UBS Teste'
+        })
+      }
+    );
+
+    assert.equal(primeiroAgendamento.status, 201);
+
+        const segundoAgendamento = await fetch(
+      `${urlBase}/api/admin/solicitacoes/${solicitacaoId}/agendamento`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Cookie: cookie
+        },
+        body: JSON.stringify({
+          data_agendamento: '2026-12-16',
+          horario: '09:00',
+          unidade_saude: 'UBS Teste 2'
+        })
+      }
+    );
+        const dadosSegundoAgendamento = await segundoAgendamento.json();
+
+    assert.equal(segundoAgendamento.status, 409);
+    assert.equal(dadosSegundoAgendamento.sucesso, false);
+    assert.equal(
+      dadosSegundoAgendamento.mensagem,
+      'Esta solicitação já possui um agendamento.'
+    );
+
+        const agendamentos = db.prepare(`
+      SELECT *
+      FROM agendamentos
+      WHERE solicitacao_id = ?
+    `).all(solicitacaoId);
+
+    assert.equal(agendamentos.length, 1);
+
+    const agendamentoOriginal = agendamentos[0];
+
+    assert.equal(agendamentoOriginal.data_agendamento, '2026-12-15');
+    assert.equal(agendamentoOriginal.horario, '14:30');
+    assert.equal(agendamentoOriginal.unidade_saude, 'UBS Teste');
+
+  } finally {
+    removerSolicitacoesTeste(paciente.id);
+    removerUsuarioTeste(paciente.id);
+    removerUsuarioTeste(administrador.id);
+  }
+});
+
+test('Deve rejeitar dados invalidos no cadastro de agendamento', async () => {
+  const administrador = criarUsuarioTeste('ADMIN');
+  const paciente = criarUsuarioTeste('PACIENTE');
+
+  try {
+
+        const resultado = db.prepare(`
+      INSERT INTO solicitacoes (usuario_id, especialidade)
+      VALUES (?, ?)
+    `).run(paciente.id, 'Cardiologia');
+
+    const solicitacaoId = Number(resultado.lastInsertRowid);
+
+    assert.ok(solicitacaoId > 0);
+
+        const login = await fetch(`${urlBase}/api/auth/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        email: administrador.email,
+        senha: administrador.senha
+      })
+    });
+
+    assert.equal(login.status, 200);
+
+    const cookie = login.headers.get('set-cookie');
+
+    assert.ok(cookie?.includes('saude.sid'));
+        const cenariosInvalidos = [
+      {
+        descricao: 'Data obrigatoria ausente',
+        dados: {
+          horario: '14:30',
+          unidade_saude: 'UBS Teste'
+        },
+        mensagem: 'Data, horário e unidade de saúde são obrigatórios.'
+      },
+      {
+        descricao: 'Horario obrigatorio ausente',
+        dados: {
+          data_agendamento: '2026-12-15',
+          unidade_saude: 'UBS Teste'
+        },
+        mensagem: 'Data, horário e unidade de saúde são obrigatórios.'
+      },
+      {
+        descricao: 'Unidade de saude obrigatoria ausente',
+        dados: {
+          data_agendamento: '2026-12-15',
+          horario: '14:30'
+        },
+        mensagem: 'Data, horário e unidade de saúde são obrigatórios.'
+      },
+      {
+        descricao: 'Data em formato incorreto',
+        dados: {
+          data_agendamento: '15/12/2026',
+          horario: '14:30',
+          unidade_saude: 'UBS Teste'
+        },
+        mensagem: 'A data do agendamento deve estar no formato AAAA-MM-DD.'
+      },
+      {
+        descricao: 'Data inexistente no calendario',
+        dados: {
+          data_agendamento: '2026-02-30',
+          horario: '14:30',
+          unidade_saude: 'UBS Teste'
+        },
+        mensagem: 'A data do agendamento não existe no calendário.'
+      },
+      {
+        descricao: 'Horario invalido',
+        dados: {
+          data_agendamento: '2026-12-15',
+          horario: '25:90',
+          unidade_saude: 'UBS Teste'
+        },
+        mensagem: 'O horário deve estar no formato HH:MM, entre 00:00 e 23:59.'
+      },
+      {
+        descricao: 'Nome da unidade acima do limite',
+        dados: {
+          data_agendamento: '2026-12-15',
+          horario: '14:30',
+          unidade_saude: 'A'.repeat(151)
+        },
+        mensagem: 'O nome da unidade de saúde deve ter no máximo 150 caracteres.'
+      }
+    ];
+
+        for (const cenario of cenariosInvalidos) {
+      const resposta = await fetch(
+        `${urlBase}/api/admin/solicitacoes/${solicitacaoId}/agendamento`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Cookie: cookie.split(';')[0]
+          },
+          body: JSON.stringify(cenario.dados)
+        }
+      );
+
+      const dados = await resposta.json();
+
+      assert.equal(
+        resposta.status,
+        400,
+        `Falha no cenário: ${cenario.descricao}`
+      );
+
+      assert.equal(
+        dados.sucesso,
+        false,
+        `Falha no cenário: ${cenario.descricao}`
+      );
+
+      assert.equal(
+        dados.mensagem,
+        cenario.mensagem,
+        `Mensagem incorreta no cenário: ${cenario.descricao}`
+      );
+    }
+
+    // Verificar que nenhum agendamento foi cadastrado
+    const agendamentos = db.prepare(`
+      SELECT COUNT(*) AS total
+      FROM agendamentos
+      WHERE solicitacao_id = ?
+    `).get(solicitacaoId);
+
+    assert.equal(agendamentos.total, 0);
+
+    // Confirmar que a solicitacao continua pendente
+    const solicitacao = db.prepare(`
+      SELECT status
+      FROM solicitacoes
+      WHERE id = ?
+    `).get(solicitacaoId);
+
+    assert.ok(solicitacao);
+    assert.equal(solicitacao.status, 'PENDENTE');
+
+    // Confirmar que nenhum historico foi registrado
+    const historico = db.prepare(`
+      SELECT COUNT(*) AS total
+      FROM historico_solicitacoes
+      WHERE solicitacao_id = ?
+    `).get(solicitacaoId);
+
+    assert.equal(historico.total, 0);
+
+  } finally {
+    removerSolicitacoesTeste(paciente.id);
+    removerUsuarioTeste(paciente.id);
+    removerUsuarioTeste(administrador.id);
   }
 });

@@ -58,7 +58,7 @@ app.use((req, res, next) => {
 app.get('/', (req, res) => {
     res.json({ mensagem: 'API Saúde em Dia funcionando!' });
     });
-    app.post('/api/auth/login', (req, res) => { 
+    app.post('/api/auth/login', (req, res) => {
       const { email, senha } = req.body;
     if (
   typeof email !== 'string' || !email.trim() ||
@@ -327,7 +327,7 @@ return res.status(500).json({
 
 })
 app.get('/api/paciente/solicitacoes/:id/historico', (req, res) => {
-    
+
     const usuario = req.session.usuario
 
   if (!usuario) {
@@ -402,7 +402,6 @@ const { status } = req.body || {}
 
 const statusPermitidos = [
   'PENDENTE',
-  'AGENDADA',
   'CONCLUIDA',
   'CANCELADA'
 ]
@@ -465,6 +464,203 @@ return res.status(200).json({
 })
 
 })
+
+// Cadastro de agendamentos pelo administrador
+app.post('/api/admin/solicitacoes/:id/agendamento', (req, res) => {
+
+    const usuario = req.session.usuario;
+
+  if (!usuario) {
+    return res.status(401).json({
+      sucesso: false,
+      mensagem: 'Usuário não autenticado.'
+    });
+  }
+
+    if (usuario.perfil !== 'ADMIN') {
+    return res.status(403).json({
+      sucesso: false,
+      mensagem: 'Acesso permitido somente para administradores.'
+    });
+  }
+
+    const idSolicitacao = Number(req.params.id);
+
+  if (!Number.isSafeInteger(idSolicitacao) || idSolicitacao <= 0) {
+    return res.status(400).json({
+      sucesso: false,
+      mensagem: 'ID da solicitação inválido.'
+    });
+  }
+
+    const solicitacaoExistente = db.prepare(`
+    SELECT id, status
+    FROM solicitacoes
+    WHERE id = ?
+  `).get(idSolicitacao);
+
+  if (!solicitacaoExistente) {
+    return res.status(404).json({
+      sucesso: false,
+      mensagem: 'Solicitação não encontrada.'
+    });
+  }
+
+    const agendamentoExistente = db.prepare(`
+    SELECT id
+    FROM agendamentos
+    WHERE solicitacao_id = ?
+  `).get(idSolicitacao);
+
+  if (agendamentoExistente) {
+    return res.status(409).json({
+      sucesso: false,
+      mensagem: 'Esta solicitação já possui um agendamento.'
+    });
+  }
+
+    const {
+    data_agendamento,
+    horario,
+    unidade_saude
+  } = req.body || {};
+
+    if (
+    typeof data_agendamento !== 'string' ||
+    typeof horario !== 'string' ||
+    typeof unidade_saude !== 'string' ||
+    !data_agendamento.trim() ||
+    !horario.trim() ||
+    !unidade_saude.trim()
+  ) {
+    return res.status(400).json({
+      sucesso: false,
+      mensagem: 'Data, horário e unidade de saúde são obrigatórios.'
+    });
+  }
+
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(data_agendamento)) {
+    return res.status(400).json({
+      sucesso: false,
+      mensagem: 'A data do agendamento deve estar no formato AAAA-MM-DD.'
+    });
+  }
+
+    const dataConvertida = new Date(`${data_agendamento}T00:00:00Z`);
+
+  if (
+    Number.isNaN(dataConvertida.getTime()) ||
+    dataConvertida.toISOString().slice(0, 10) !== data_agendamento
+  ) {
+    return res.status(400).json({
+      sucesso: false,
+      mensagem: 'A data do agendamento não existe no calendário.'
+    });
+  }
+
+    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(horario)) {
+    return res.status(400).json({
+      sucesso: false,
+      mensagem: 'O horário deve estar no formato HH:MM, entre 00:00 e 23:59.'
+    });
+  }
+
+    if (unidade_saude.trim().length > 150) {
+    return res.status(400).json({
+      sucesso: false,
+      mensagem: 'O nome da unidade de saúde deve ter no máximo 150 caracteres.'
+    });
+  }
+
+    const agora = new Date();
+
+  const dataAtual = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Belem',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).format(agora);
+
+  if (data_agendamento < dataAtual) {
+    return res.status(400).json({
+      sucesso: false,
+      mensagem: 'Não é permitido agendar consultas em datas anteriores à atual.'
+    });
+  }
+
+    const horarioAtual = new Intl.DateTimeFormat('pt-BR', {
+    timeZone: 'America/Belem',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23'
+  }).format(agora);
+
+  if (data_agendamento === dataAtual && horario <= horarioAtual) {
+    return res.status(400).json({
+      sucesso: false,
+      mensagem: 'O horário do agendamento deve ser posterior ao horário atual.'
+    });
+  }
+
+    if (solicitacaoExistente.status !== 'PENDENTE') {
+    return res.status(409).json({
+      sucesso: false,
+      mensagem: 'Somente solicitações pendentes podem receber um novo agendamento.'
+    });
+  }
+
+    const cadastrarAgendamento = db.transaction(() => {
+
+          const resultadoAgendamento = db.prepare(`
+      INSERT INTO agendamentos (
+        solicitacao_id,
+        data_agendamento,
+        horario,
+        unidade_saude
+      )
+      VALUES (?, ?, ?, ?)
+    `).run(
+      idSolicitacao,
+      data_agendamento,
+      horario,
+      unidade_saude.trim()
+    );
+
+        db.prepare(`
+      UPDATE solicitacoes
+      SET status = ?
+      WHERE id = ?
+    `).run('AGENDADA', idSolicitacao);
+
+        db.prepare(`
+      INSERT INTO historico_solicitacoes (
+        solicitacao_id,
+        status_anterior,
+        status_novo
+      )
+      VALUES (?, ?, ?)
+    `).run(
+      idSolicitacao,
+      solicitacaoExistente.status,
+      'AGENDADA'
+    );
+
+    return Number(resultadoAgendamento.lastInsertRowid);
+          });
+
+    const idAgendamento = cadastrarAgendamento();
+      return res.status(201).json({
+    sucesso: true,
+    mensagem: 'Agendamento cadastrado com sucesso.',
+    agendamento: {
+      id: idAgendamento,
+      solicitacao_id: idSolicitacao,
+      data_agendamento,
+      horario,
+      unidade_saude: unidade_saude.trim()
+    }
+  });
+  });
 
 app.post('/api/auth/logout', (req, res) => {
   req.session.destroy((erro) => {
