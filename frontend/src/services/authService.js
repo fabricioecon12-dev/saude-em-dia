@@ -1,7 +1,8 @@
+import { API_URL } from './apiConfig.js'
 
 export async function realizarLogin(email, senha) {
   try {
-    const resposta = await fetch('http://localhost:3000/api/auth/login', {
+    const resposta = await fetch(`${API_URL}/api/auth/login`, {
       method: 'POST',
       credentials: 'include',
       headers: {
@@ -22,7 +23,7 @@ export async function realizarLogin(email, senha) {
 
 export async function verificarSessao() {
   try {
-    const resposta = await fetch('http://localhost:3000/api/auth/me', {
+    const resposta = await fetch(`${API_URL}/api/auth/me`, {
       method: 'GET',
       credentials: 'include'
     })
@@ -38,7 +39,7 @@ export async function verificarSessao() {
 
 export async function encerrarSessao() {
   try {
-    const resposta = await fetch('http://localhost:3000/api/auth/logout', {
+    const resposta = await fetch(`${API_URL}/api/auth/logout`, {
       method: 'POST',
       credentials: 'include'
     })

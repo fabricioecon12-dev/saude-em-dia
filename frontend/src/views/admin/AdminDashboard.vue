@@ -1,6 +1,8 @@
 <script setup>
+import { API_URL } from '../../services/apiConfig.js'
 import '../../styles/admin-dashboard.css'
 import { ref, onMounted, nextTick } from 'vue'
+import ReagendamentoConsulta from '../../components/admin/ReagendamentoConsulta.vue'
 
 defineProps({
   usuario: {
@@ -8,6 +10,29 @@ defineProps({
     required: true
   }
 })
+function formatarDataConsulta(data) {
+  if (typeof data !== 'string') return 'Não informada'
+
+  const correspondencia = /^(\d{4})-(\d{2})-(\d{2})$/.exec(data)
+
+  if (!correspondencia) return 'Data inválida'
+
+  const [, ano, mes, dia] = correspondencia
+
+  const dataVerificada = new Date(
+    Date.UTC(Number(ano), Number(mes) - 1, Number(dia))
+  )
+
+  if (
+    dataVerificada.getUTCFullYear() !== Number(ano) ||
+    dataVerificada.getUTCMonth() + 1 !== Number(mes) ||
+    dataVerificada.getUTCDate() !== Number(dia)
+  ) {
+    return 'Data inválida'
+  }
+
+  return `${dia}/${mes}/${ano}`
+}
 function formatarDataLocal(data) {
   if (!data) return 'Não informada'
 
@@ -31,6 +56,7 @@ const novoStatus = ref('')
 const mensagemNotificacao = ref('')
 const tipoNotificacao = ref('')
 const historicoSolicitacao = ref([])
+const historicoCronologico = ref([])
 const historicoConsultado = ref(false)
 const painelGerenciamento = ref(null)
 // Dados do formulario de agendamento medico
@@ -58,6 +84,7 @@ async function selecionarSolicitacao(solicitacao) {
   novoStatus.value = solicitacao.status
 
   historicoSolicitacao.value = []
+  historicoCronologico.value = []
   historicoConsultado.value = false
     // Limpar os dados do agendamento anterior
   dataAgendamento.value = ''
@@ -75,6 +102,7 @@ function fecharGerenciamento() {
   solicitacaoSelecionada.value = null
   novoStatus.value = ''
   historicoSolicitacao.value = []
+  historicoCronologico.value = []
   historicoConsultado.value = false
     // Limpar os campos do formulario de agendamento
   dataAgendamento.value = ''
@@ -85,7 +113,7 @@ function fecharGerenciamento() {
 async function consultarHistorico(solicitacao) {
    try {
     const resposta = await fetch(
-  `http://localhost:3000/api/admin/solicitacoes/${solicitacao.id}/historico`,
+  `${API_URL}/api/admin/solicitacoes/${solicitacao.id}/historico`,
   {
     method: 'GET',
     credentials: 'include'
@@ -97,6 +125,32 @@ if (!resposta.ok) {
   throw new Error(dados.mensagem || 'Erro ao consultar histórico.')
 }
 historicoSolicitacao.value = dados.historico
+
+const eventosStatus = (dados.historico || []).map(registro => ({
+  ...registro,
+  tipo: 'status',
+  chave: `status-${registro.id}`
+}))
+
+const eventosReagendamento = (dados.reagendamentos || []).map(registro => ({
+  ...registro,
+  tipo: 'reagendamento',
+  chave: `reagendamento-${registro.id}`
+}))
+
+historicoCronologico.value = [
+  ...eventosStatus,
+  ...eventosReagendamento
+].sort((a, b) => {
+  const dataA = String(a.data_alteracao || '')
+  const dataB = String(b.data_alteracao || '')
+
+  if (dataA !== dataB) {
+    return dataB.localeCompare(dataA)
+  }
+
+  return b.id - a.id
+})
 historicoConsultado.value = true
   } catch (erro) {
     await mostrarNotificacao(erro.message || 'Não foi possível consultar o histórico.', 'erro')
@@ -108,7 +162,7 @@ historicoConsultado.value = true
 async function carregarTotalSolicitacoes() {
   try {
     const resposta = await fetch(
-      'http://localhost:3000/api/admin/solicitacoes/resumo',
+      `${API_URL}/api/admin/solicitacoes/resumo`,
       {
         method: 'GET',
         credentials: 'include'
@@ -129,10 +183,10 @@ async function carregarTotalSolicitacoes() {
     console.error('Erro ao carregar solicitações:', erro.message)
   }
 }
-async function carregarListaSolicitacoes() {
+async function carregarListaSolicitacoes(propagarErro = false) {
   try {
     const resposta = await fetch(
-      'http://localhost:3000/api/admin/solicitacoes',
+      `${API_URL}/api/admin/solicitacoes`,
       {
         method: 'GET',
         credentials: 'include'
@@ -148,6 +202,9 @@ async function carregarListaSolicitacoes() {
 
   } catch (erro) {
     console.error('Erro ao carregar lista de solicitações:', erro.message)
+    if (propagarErro) {
+      throw erro
+    }
   }
 }
 
@@ -173,7 +230,7 @@ if (novoStatus.value === solicitacaoSelecionada.value.status) {
 
 try {
 const resposta = await fetch(
-  `http://localhost:3000/api/admin/solicitacoes/${idSolicitacao}/status`,
+  `${API_URL}/api/admin/solicitacoes/${idSolicitacao}/status`,
   {
     method: 'PATCH',
     credentials: 'include',
@@ -204,6 +261,24 @@ mostrarNotificacao('Status da solicitação atualizado com sucesso!', 'sucesso')
   mostrarNotificacao('Erro ao salvar alteração: ' + erro.message, 'erro')
 }
 
+}
+async function concluirReagendamento() {
+  try {
+    await carregarTotalSolicitacoes()
+    await carregarListaSolicitacoes(true)
+
+    fecharGerenciamento()
+
+    await mostrarNotificacao(
+      'Consulta médica reagendada com sucesso!',
+      'sucesso'
+    )
+  } catch (erro) {
+    await mostrarNotificacao(
+      'A consulta foi reagendada, mas houve um problema ao atualizar o painel.',
+      'erro'
+    )
+  }
 }
 async function salvarAgendamento() {
   const idSolicitacao = solicitacaoSelecionada.value?.id
@@ -236,7 +311,7 @@ async function salvarAgendamento() {
 
   try {
     const resposta = await fetch(
-      `http://localhost:3000/api/admin/solicitacoes/${idSolicitacao}/agendamento`,
+      `${API_URL}/api/admin/solicitacoes/${idSolicitacao}/agendamento`,
       {
         method: 'POST',
         credentials: 'include',
@@ -421,14 +496,49 @@ onMounted(() => {
   {{ historicoConsultado ? 'Ocultar histórico' : 'Ver histórico' }}
 </button>
 <h4 v-if="historicoConsultado">Histórico de alterações</h4>
-<ul v-if="historicoConsultado && historicoSolicitacao.length > 0"
-  class="lista-historico-admin">
-  <li v-for="registro in historicoSolicitacao" :key="registro.id">
-    {{ registro.status_anterior }} → {{ registro.status_novo }}
-<small>Data da alteração: {{ formatarDataLocal(registro.data_alteracao) }}</small>
+
+<ul
+  v-if="historicoConsultado && historicoCronologico.length > 0"
+  class="lista-historico-admin"
+>
+  <li
+    v-for="registro in historicoCronologico"
+    :key="registro.chave"
+  >
+    <template v-if="registro.tipo === 'status'">
+      <strong>Alteração de status</strong>
+      <p>{{ registro.status_anterior }} → {{ registro.status_novo }}</p>
+    </template>
+
+    <template v-else-if="registro.tipo === 'reagendamento'">
+      <strong>Reagendamento de consulta</strong>
+
+      <p>
+        <strong>Data:</strong>
+        {{ formatarDataConsulta(registro.data_anterior) }} → {{ formatarDataConsulta(registro.data_nova) }}
+      </p>
+
+      <p>
+        <strong>Horário:</strong>
+        {{ registro.horario_anterior }} → {{ registro.horario_novo }}
+      </p>
+
+      <p>
+        <strong>Unidade:</strong>
+        {{ registro.unidade_anterior }} → {{ registro.unidade_nova }}
+      </p>
+    </template>
+
+    <small>
+      Data da alteração:
+      {{ formatarDataLocal(registro.data_alteracao) }}
+    </small>
   </li>
 </ul>
-<p v-if="historicoConsultado && historicoSolicitacao.length === 0">Nenhuma alteração registrada.</p>
+
+<p v-if="historicoConsultado && historicoCronologico.length === 0">
+  Nenhuma alteração registrada.
+</p>
   <p>
     <strong>Paciente:</strong>
     {{ solicitacaoSelecionada.paciente }}
@@ -443,6 +553,27 @@ onMounted(() => {
     <strong>Status atual:</strong>
     {{ solicitacaoSelecionada.status }}
   </p>
+<!-- Componente de reagendamento -->
+<ReagendamentoConsulta
+  v-if="
+    solicitacaoSelecionada.status === 'AGENDADA' &&
+    Number.isSafeInteger(solicitacaoSelecionada.versao) &&
+    solicitacaoSelecionada.versao >= 1
+  "
+  :key="solicitacaoSelecionada.id"
+  :solicitacao="solicitacaoSelecionada"
+  @reagendamento-concluido="concluirReagendamento"
+/>
+
+<p
+  v-else-if="solicitacaoSelecionada.status === 'AGENDADA'"
+  role="alert"
+>
+  Esta solicitação está marcada como agendada, mas não possui
+  um agendamento válido registrado. O reagendamento não está
+  disponível. Verifique os dados antes de prosseguir.
+</p>
+
 <!-- Formulário de agendamento médico -->
 <form
   v-if="solicitacaoSelecionada.status === 'PENDENTE'"

@@ -6,10 +6,11 @@ const db = require('./config/database');
 const bcrypt = require('bcrypt');
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
+const SESSION_COOKIE_NAME = process.env.SESSION_COOKIE_NAME || 'saude.sid';
 app.use(express.json());
 app.use(session({
-  name: 'saude.sid',
+  name: SESSION_COOKIE_NAME,
   secret: process.env.SESSION_SECRET,
   resave: false,
   saveUninitialized: false,
@@ -324,11 +325,29 @@ try {
   WHERE solicitacao_id = ?
   ORDER BY data_alteracao DESC, id DESC
 `).all(idSolicitacao)
+const reagendamentos = db.prepare(`
+  SELECT
+    h.id,
+    h.agendamento_id,
+    h.data_anterior,
+    h.horario_anterior,
+    h.unidade_anterior,
+    h.data_nova,
+    h.horario_novo,
+    h.unidade_nova,
+    h.administrador_id,
+    h.data_alteracao
+  FROM historico_reagendamentos AS h
+  INNER JOIN agendamentos AS a
+    ON a.id = h.agendamento_id
+  WHERE a.solicitacao_id = ?
+  ORDER BY h.data_alteracao DESC, h.id DESC
+`).all(idSolicitacao);
 return res.status(200).json({
   sucesso: true,
   solicitacao_id: idSolicitacao,
-  historico: historico
-})
+  historico: historico,
+  reagendamentos: reagendamentos})
 
 } catch (erro) {
   console.error('Erro ao consultar histórico:', erro.message)
@@ -391,8 +410,7 @@ app.get('/api/paciente/solicitacoes/:id/historico', (req, res) => {
     return res.status(200).json({
     sucesso: true,
     solicitacao_id: idSolicitacao,
-    historico: historico
-  })
+    historico: historico})
 
 })
 
@@ -940,7 +958,7 @@ app.post('/api/auth/logout', (req, res) => {
       });
     }
 
-    res.clearCookie('saude.sid', { path: '/' });
+    res.clearCookie(SESSION_COOKIE_NAME, { path: '/' });
 
     return res.status(200).json({
       sucesso: true,

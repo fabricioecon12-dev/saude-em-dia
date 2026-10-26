@@ -1,4 +1,5 @@
 <script setup>
+import { API_URL } from '../../services/apiConfig.js'
 import '../../styles/paciente-dashboard.css'
 import { ref, onMounted } from 'vue'
 
@@ -61,7 +62,7 @@ function formatarDataAgendamento(data) {
 async function carregarSolicitacoes() {
   try {
     const resposta = await fetch(
-      'http://localhost:3000/api/paciente/solicitacoes',
+      `${API_URL}/api/paciente/solicitacoes`,
       {
         method: 'GET',
         credentials: 'include'
@@ -80,7 +81,7 @@ async function carregarSolicitacoes() {
 }
 async function cadastrarSolicitacao() {
     try {
-      const resposta = await fetch('http://localhost:3000/api/paciente/solicitacoes', {
+      const resposta = await fetch(`${API_URL}/api/paciente/solicitacoes`, {
     method: 'POST',
     credentials: 'include',
     headers: {
@@ -114,7 +115,7 @@ async function alternarHistorico(idSolicitacao) {
   }
   try {
     const resposta = await fetch(
-  `http://localhost:3000/api/paciente/solicitacoes/${idSolicitacao}/historico`,
+  `${API_URL}/api/paciente/solicitacoes/${idSolicitacao}/historico`,
   {
     method: 'GET',
     credentials: 'include'
