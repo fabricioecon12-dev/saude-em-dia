@@ -6686,3 +6686,119 @@ test('Administrador deve consultar historico completo apos reagendamento', async
     removerUsuarioTeste(administrador.id);
   }
 });
+// ETAPA 36.6-P.8-H.33-F - Bloqueio de reagendamento identico
+test('Deve rejeitar reagendamento com dados identicos sem alterar historico', async () => {
+  const administrador = criarUsuarioTeste('ADMIN');
+  const paciente = criarUsuarioTeste('PACIENTE');
+
+  try {
+    const resultadoSolicitacao = db.prepare(`
+      INSERT INTO solicitacoes (
+        usuario_id,
+        especialidade,
+        status
+      )
+      VALUES (?, ?, ?)
+    `).run(paciente.id, 'Cardiologia', 'AGENDADA');
+
+    const solicitacaoId = Number(resultadoSolicitacao.lastInsertRowid);
+
+    const resultadoAgendamento = db.prepare(`
+      INSERT INTO agendamentos (
+        solicitacao_id,
+        data_agendamento,
+        horario,
+        unidade_saude
+      )
+      VALUES (?, ?, ?, ?)
+    `).run(
+      solicitacaoId,
+      '2099-12-15',
+      '14:30',
+      'UBS Central'
+    );
+
+    const agendamentoId = Number(resultadoAgendamento.lastInsertRowid);
+
+    const login = await fetch(`${urlBase}/api/auth/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        email: administrador.email,
+        senha: administrador.senha
+      })
+    });
+
+    assert.equal(login.status, 200);
+
+    const cookieRecebido = login.headers.get('set-cookie');
+    assert.ok(cookieRecebido);
+
+    const cookie = cookieRecebido.split(';')[0];
+
+    const resposta = await fetch(
+      `${urlBase}/api/admin/solicitacoes/${solicitacaoId}/reagendamento`,
+      {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Cookie: cookie
+        },
+        body: JSON.stringify({
+          data_agendamento: '2099-12-15',
+          horario: '14:30',
+          unidade_saude: 'UBS Central',
+          versao: 1
+        })
+      }
+    );
+
+    const dados = await resposta.json();
+
+    // 1. A API deve bloquear o reagendamento identico.
+    assert.equal(resposta.status, 409);
+    assert.equal(dados.sucesso, false);
+    assert.equal(
+      dados.mensagem,
+      'Os dados informados s\u00e3o iguais ao agendamento atual.'
+    );
+
+    // 2. Os dados originais devem permanecer intactos.
+    const agendamento = db.prepare(`
+      SELECT *
+      FROM agendamentos
+      WHERE id = ?
+    `).get(agendamentoId);
+
+    assert.ok(agendamento);
+    assert.equal(agendamento.data_agendamento, '2099-12-15');
+    assert.equal(agendamento.horario, '14:30');
+    assert.equal(agendamento.unidade_saude, 'UBS Central');
+    assert.equal(agendamento.versao, 1);
+
+    // 3. Nenhum historico de reagendamento deve ser criado.
+    const quantidadeHistoricos = db.prepare(`
+      SELECT COUNT(*) AS total
+      FROM historico_reagendamentos
+      WHERE agendamento_id = ?
+    `).get(agendamentoId);
+
+    assert.equal(quantidadeHistoricos.total, 0);
+
+    // 4. A solicitacao deve permanecer agendada.
+    const solicitacao = db.prepare(`
+      SELECT status
+      FROM solicitacoes
+      WHERE id = ?
+    `).get(solicitacaoId);
+
+    assert.equal(solicitacao.status, 'AGENDADA');
+
+  } finally {
+    removerSolicitacoesTeste(paciente.id);
+    removerUsuarioTeste(paciente.id);
+    removerUsuarioTeste(administrador.id);
+  }
+});
