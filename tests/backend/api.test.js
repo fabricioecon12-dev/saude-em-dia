@@ -6250,3 +6250,144 @@ test('Deve reagendar consulta e registrar historico completo', async () => {
     removerUsuarioTeste(administrador.id);
   }
 });
+
+// ETAPA 36.6-N - Rollback quando o historico de reagendamento falhar
+test('Deve reverter reagendamento quando a gravacao do historico falhar', async () => {
+  const administrador = criarUsuarioTeste('ADMIN');
+  const paciente = criarUsuarioTeste('PACIENTE');
+
+  let triggerCriado = false;
+
+  try {
+    const resultadoSolicitacao = db.prepare(`
+      INSERT INTO solicitacoes (
+        usuario_id,
+        especialidade,
+        status
+      )
+      VALUES (?, ?, ?)
+    `).run(paciente.id, 'Cardiologia', 'AGENDADA');
+
+    const solicitacaoId = Number(resultadoSolicitacao.lastInsertRowid);
+
+    const resultadoAgendamento = db.prepare(`
+      INSERT INTO agendamentos (
+        solicitacao_id,
+        data_agendamento,
+        horario,
+        unidade_saude
+      )
+      VALUES (?, ?, ?, ?)
+    `).run(
+      solicitacaoId,
+      '2099-12-15',
+      '14:30',
+      'UBS Central'
+    );
+
+    const agendamentoId = Number(resultadoAgendamento.lastInsertRowid);
+
+    const login = await fetch(`${urlBase}/api/auth/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        email: administrador.email,
+        senha: administrador.senha
+      })
+    });
+
+    assert.equal(login.status, 200);
+
+    const cookieRecebido = login.headers.get('set-cookie');
+    assert.ok(cookieRecebido);
+
+    const cookie = cookieRecebido.split(';')[0];
+
+    // Trigger temporario: simula falha na gravacao do historico.
+    db.exec(`
+      CREATE TEMP TRIGGER teste_falha_historico_reagendamento
+      BEFORE INSERT ON main.historico_reagendamentos
+      BEGIN
+        SELECT RAISE(ABORT, 'Falha simulada no historico');
+      END;
+    `);
+
+    triggerCriado = true;
+
+    const resposta = await fetch(
+      `${urlBase}/api/admin/solicitacoes/${solicitacaoId}/reagendamento`,
+      {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Cookie: cookie
+        },
+        body: JSON.stringify({
+          data_agendamento: '2099-12-18',
+          horario: '09:00',
+          unidade_saude: 'UBS Sao Jose'
+        })
+      }
+    );
+
+    const dados = await resposta.json();
+
+    // 1. A API deve informar falha.
+    assert.equal(resposta.status, 500);
+    assert.equal(dados.sucesso, false);
+
+    // 2. O agendamento deve permanecer com os dados originais.
+    const agendamento = db.prepare(`
+      SELECT *
+      FROM agendamentos
+      WHERE id = ?
+    `).get(agendamentoId);
+
+    assert.ok(agendamento);
+    assert.equal(agendamento.data_agendamento, '2099-12-15');
+    assert.equal(agendamento.horario, '14:30');
+    assert.equal(agendamento.unidade_saude, 'UBS Central');
+
+    // 3. Nenhum historico deve ser criado.
+    const historicos = db.prepare(`
+      SELECT COUNT(*) AS total
+      FROM historico_reagendamentos
+      WHERE agendamento_id = ?
+    `).get(agendamentoId);
+
+    assert.equal(historicos.total, 0);
+
+    // 4. A solicitacao deve permanecer agendada.
+    const solicitacao = db.prepare(`
+      SELECT status
+      FROM solicitacoes
+      WHERE id = ?
+    `).get(solicitacaoId);
+
+    assert.equal(solicitacao.status, 'AGENDADA');
+
+    // 5. Nao deve haver agendamentos duplicados.
+    const quantidade = db.prepare(`
+      SELECT COUNT(*) AS total
+      FROM agendamentos
+      WHERE solicitacao_id = ?
+    `).get(solicitacaoId);
+
+    assert.equal(quantidade.total, 1);
+
+  } finally {
+    try {
+      if (triggerCriado) {
+        db.exec(`
+          DROP TRIGGER IF EXISTS temp.teste_falha_historico_reagendamento;
+        `);
+      }
+    } finally {
+      removerSolicitacoesTeste(paciente.id);
+      removerUsuarioTeste(paciente.id);
+      removerUsuarioTeste(administrador.id);
+    }
+  }
+});
