@@ -269,10 +269,16 @@ app.get('/api/admin/solicitacoes', (req, res) => {
         u.nome AS paciente,
         s.especialidade,
         s.data_solicitacao,
-        s.status
+        s.status,
+        a.data_agendamento,
+        a.horario,
+        a.unidade_saude,
+        a.versao
       FROM solicitacoes AS s
       INNER JOIN usuarios AS u
         ON u.id = s.usuario_id
+      LEFT JOIN agendamentos AS a
+        ON a.solicitacao_id = s.id
       ORDER BY s.data_solicitacao DESC, s.id DESC
     `).all()
 
@@ -666,7 +672,8 @@ app.post('/api/admin/solicitacoes/:id/agendamento', (req, res) => {
       solicitacao_id: idSolicitacao,
       data_agendamento,
       horario,
-      unidade_saude: unidade_saude.trim()
+      unidade_saude: unidade_saude.trim(),
+      versao: 1
     }
   });
   });
@@ -708,8 +715,16 @@ app.patch('/api/admin/solicitacoes/:id/reagendamento', (req, res) => {
   const {
     data_agendamento,
     horario,
-    unidade_saude
+    unidade_saude,
+    versao
   } = req.body || {};
+
+  if (!Number.isSafeInteger(versao) || versao < 1) {
+    return res.status(400).json({
+      sucesso: false,
+      mensagem: 'A versão do agendamento deve ser um número inteiro positivo.'
+    });
+  }
 
   if (
     typeof data_agendamento !== 'string' ||
@@ -807,7 +822,7 @@ app.patch('/api/admin/solicitacoes/:id/reagendamento', (req, res) => {
   }
 
   const agendamento = db.prepare(`
-    SELECT id, data_agendamento, horario, unidade_saude
+    SELECT id, data_agendamento, horario, unidade_saude, versao
     FROM agendamentos
     WHERE solicitacao_id = ?
   `).get(idSolicitacao);
@@ -816,6 +831,13 @@ app.patch('/api/admin/solicitacoes/:id/reagendamento', (req, res) => {
     return res.status(404).json({
       sucesso: false,
       mensagem: 'Agendamento não encontrado para esta solicitação.'
+    });
+  }
+
+  if (agendamento.versao !== versao) {
+    return res.status(409).json({
+      sucesso: false,
+      mensagem: 'O agendamento foi alterado por outro administrador. Atualize os dados e tente novamente.'
     });
   }
 
@@ -836,17 +858,22 @@ app.patch('/api/admin/solicitacoes/:id/reagendamento', (req, res) => {
         UPDATE agendamentos
         SET data_agendamento = ?,
             horario = ?,
-            unidade_saude = ?
+            unidade_saude = ?,
+            versao = versao + 1
         WHERE id = ?
+          AND versao = ?
       `).run(
         data_agendamento,
         horario,
         unidadeNormalizada,
-        agendamento.id
+        agendamento.id,
+        versao
       );
 
       if (resultado.changes !== 1) {
-        throw new Error('Não foi possível atualizar o agendamento.');
+        const erroConcorrencia = new Error('Conflito de versão do agendamento.');
+        erroConcorrencia.codigo = 'CONFLITO_VERSAO';
+        throw erroConcorrencia;
       }
 
       db.prepare(`
@@ -883,11 +910,19 @@ app.patch('/api/admin/solicitacoes/:id/reagendamento', (req, res) => {
         solicitacao_id: idSolicitacao,
         data_agendamento,
         horario,
-        unidade_saude: unidadeNormalizada
+        unidade_saude: unidadeNormalizada,
+        versao: versao + 1
       }
     });
 
   } catch (erro) {
+    if (erro.codigo === 'CONFLITO_VERSAO') {
+      return res.status(409).json({
+        sucesso: false,
+        mensagem: 'O agendamento foi alterado por outro administrador. Atualize os dados e tente novamente.'
+      });
+    }
+
     console.error('Erro ao reagendar consulta:', erro);
 
     return res.status(500).json({

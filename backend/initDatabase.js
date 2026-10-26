@@ -38,11 +38,28 @@ db.exec(`
     data_agendamento TEXT NOT NULL,
     horario TEXT NOT NULL,
     unidade_saude TEXT NOT NULL,
+    versao INTEGER NOT NULL DEFAULT 1 CHECK (versao >= 1),
     data_criacao TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (solicitacao_id) REFERENCES solicitacoes(id)
   );
 `);
 
+
+// Migracao idempotente: adiciona controle de versao aos bancos existentes.
+const colunasAgendamentos = db.prepare(
+  'PRAGMA table_info(agendamentos)'
+).all();
+
+const possuiColunaVersao = colunasAgendamentos.some(
+  (coluna) => coluna.name === 'versao'
+);
+
+if (!possuiColunaVersao) {
+  db.exec(`
+    ALTER TABLE agendamentos
+    ADD COLUMN versao INTEGER NOT NULL DEFAULT 1 CHECK (versao >= 1)
+  `);
+}
 db.exec(`
   CREATE TABLE IF NOT EXISTS historico_reagendamentos (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -5913,7 +5913,8 @@ test('Deve rejeitar identificadores invalidos no reagendamento', async () => {
           body: JSON.stringify({
             data_agendamento: '2026-12-18',
             horario: '09:00',
-            unidade_saude: 'UBS Teste'
+            unidade_saude: 'UBS Teste',
+            versao: 1
           })
         }
       );
@@ -5984,7 +5985,8 @@ test('Deve rejeitar reagendamento de solicitacao inexistente', async () => {
         body: JSON.stringify({
           data_agendamento: '2026-12-18',
           horario: '09:00',
-          unidade_saude: 'UBS Teste'
+          unidade_saude: 'UBS Teste',
+            versao: 1
         })
       }
     );
@@ -6069,7 +6071,8 @@ test('Deve impedir reagendamento de solicitacao pendente', async () => {
         body: JSON.stringify({
           data_agendamento: '2099-12-18',
           horario: '09:00',
-          unidade_saude: 'UBS Teste'
+          unidade_saude: 'UBS Teste',
+            versao: 1
         })
       }
     );
@@ -6171,7 +6174,8 @@ test('Deve reagendar consulta e registrar historico completo', async () => {
         body: JSON.stringify({
           data_agendamento: '2099-12-18',
           horario: '09:00',
-          unidade_saude: 'UBS São José'
+          unidade_saude: 'UBS São José',
+          versao: 1
         })
       }
     );
@@ -6189,6 +6193,7 @@ test('Deve reagendar consulta e registrar historico completo', async () => {
     assert.equal(dados.agendamento.data_agendamento, '2099-12-18');
     assert.equal(dados.agendamento.horario, '09:00');
     assert.equal(dados.agendamento.unidade_saude, 'UBS São José');
+    assert.equal(dados.agendamento.versao, 2);
 
     // 3. Dados persistidos no banco
     const agendamentoAtualizado = db.prepare(`
@@ -6202,6 +6207,7 @@ test('Deve reagendar consulta e registrar historico completo', async () => {
     assert.equal(agendamentoAtualizado.data_agendamento, '2099-12-18');
     assert.equal(agendamentoAtualizado.horario, '09:00');
     assert.equal(agendamentoAtualizado.unidade_saude, 'UBS São José');
+    assert.equal(agendamentoAtualizado.versao, 2);
 
     // 4. Nao deve criar outro agendamento
     const quantidadeAgendamentos = db.prepare(`
@@ -6327,7 +6333,8 @@ test('Deve reverter reagendamento quando a gravacao do historico falhar', async 
         body: JSON.stringify({
           data_agendamento: '2099-12-18',
           horario: '09:00',
-          unidade_saude: 'UBS Sao Jose'
+          unidade_saude: 'UBS Sao Jose',
+          versao: 1
         })
       }
     );
@@ -6349,6 +6356,7 @@ test('Deve reverter reagendamento quando a gravacao do historico falhar', async 
     assert.equal(agendamento.data_agendamento, '2099-12-15');
     assert.equal(agendamento.horario, '14:30');
     assert.equal(agendamento.unidade_saude, 'UBS Central');
+    assert.equal(agendamento.versao, 1);
 
     // 3. Nenhum historico deve ser criado.
     const historicos = db.prepare(`
@@ -6389,5 +6397,177 @@ test('Deve reverter reagendamento quando a gravacao do historico falhar', async 
       removerUsuarioTeste(paciente.id);
       removerUsuarioTeste(administrador.id);
     }
+  }
+});
+
+// ETAPA 36.6-O.9-I - Concorrencia otimista no reagendamento
+test('Deve rejeitar reagendamento com versao desatualizada', async () => {
+  const administradorA = criarUsuarioTeste('ADMIN');
+  const administradorB = criarUsuarioTeste('ADMIN');
+  const paciente = criarUsuarioTeste('PACIENTE');
+
+  try {
+    const resultadoSolicitacao = db.prepare(`
+      INSERT INTO solicitacoes (
+        usuario_id,
+        especialidade,
+        status
+      )
+      VALUES (?, ?, ?)
+    `).run(paciente.id, 'Cardiologia', 'AGENDADA');
+
+    const solicitacaoId = Number(resultadoSolicitacao.lastInsertRowid);
+
+    const resultadoAgendamento = db.prepare(`
+      INSERT INTO agendamentos (
+        solicitacao_id,
+        data_agendamento,
+        horario,
+        unidade_saude
+      )
+      VALUES (?, ?, ?, ?)
+    `).run(
+      solicitacaoId,
+      '2099-12-15',
+      '14:30',
+      'UBS Central'
+    );
+
+    const agendamentoId = Number(resultadoAgendamento.lastInsertRowid);
+
+    const inicial = db.prepare(`
+      SELECT versao
+      FROM agendamentos
+      WHERE id = ?
+    `).get(agendamentoId);
+
+    assert.equal(inicial.versao, 1);
+
+    async function autenticar(administrador) {
+      const login = await fetch(`${urlBase}/api/auth/login`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          email: administrador.email,
+          senha: administrador.senha
+        })
+      });
+
+      assert.equal(login.status, 200);
+
+      const cookieRecebido = login.headers.get('set-cookie');
+      assert.ok(cookieRecebido);
+
+      return cookieRecebido.split(';')[0];
+    }
+
+    const cookieA = await autenticar(administradorA);
+    const cookieB = await autenticar(administradorB);
+
+    // Ambos os administradores possuem a versao inicial.
+    const versaoAdministradorA = inicial.versao;
+    const versaoAdministradorB = inicial.versao;
+
+    // 1. Primeiro administrador realiza o reagendamento.
+    const respostaA = await fetch(
+      `${urlBase}/api/admin/solicitacoes/${solicitacaoId}/reagendamento`,
+      {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Cookie: cookieA
+        },
+        body: JSON.stringify({
+          data_agendamento: '2099-12-18',
+          horario: '09:00',
+          unidade_saude: 'UBS Sao Jose',
+          versao: versaoAdministradorA
+        })
+      }
+    );
+
+    const dadosA = await respostaA.json();
+
+    assert.equal(respostaA.status, 200);
+    assert.equal(dadosA.sucesso, true);
+    assert.equal(dadosA.agendamento.versao, 2);
+
+    // 2. Segundo administrador tenta utilizar a versao antiga.
+    const respostaB = await fetch(
+      `${urlBase}/api/admin/solicitacoes/${solicitacaoId}/reagendamento`,
+      {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Cookie: cookieB
+        },
+        body: JSON.stringify({
+          data_agendamento: '2099-12-20',
+          horario: '11:00',
+          unidade_saude: 'UBS Norte',
+          versao: versaoAdministradorB
+        })
+      }
+    );
+
+    const dadosB = await respostaB.json();
+
+    assert.equal(respostaB.status, 409);
+    assert.equal(dadosB.sucesso, false);
+
+    assert.equal(
+      dadosB.mensagem,
+      'O agendamento foi alterado por outro administrador. Atualize os dados e tente novamente.'
+    );
+
+    // 3. Confirmar que a segunda tentativa nao sobrescreveu os dados.
+    const agendamentoFinal = db.prepare(`
+      SELECT *
+      FROM agendamentos
+      WHERE id = ?
+    `).get(agendamentoId);
+
+    assert.ok(agendamentoFinal);
+    assert.equal(agendamentoFinal.data_agendamento, '2099-12-18');
+    assert.equal(agendamentoFinal.horario, '09:00');
+    assert.equal(agendamentoFinal.unidade_saude, 'UBS Sao Jose');
+    assert.equal(agendamentoFinal.versao, 2);
+
+    // 4. Confirmar que apenas um historico foi registrado.
+    const historicos = db.prepare(`
+      SELECT *
+      FROM historico_reagendamentos
+      WHERE agendamento_id = ?
+    `).all(agendamentoId);
+
+    assert.equal(historicos.length, 1);
+    assert.equal(historicos[0].administrador_id, administradorA.id);
+    assert.equal(historicos[0].data_nova, '2099-12-18');
+    assert.equal(historicos[0].horario_novo, '09:00');
+
+    // 5. Confirmar que nao houve duplicacao de agendamentos.
+    const quantidade = db.prepare(`
+      SELECT COUNT(*) AS total
+      FROM agendamentos
+      WHERE solicitacao_id = ?
+    `).get(solicitacaoId);
+
+    assert.equal(quantidade.total, 1);
+
+    const solicitacao = db.prepare(`
+      SELECT status
+      FROM solicitacoes
+      WHERE id = ?
+    `).get(solicitacaoId);
+
+    assert.equal(solicitacao.status, 'AGENDADA');
+
+  } finally {
+    removerSolicitacoesTeste(paciente.id);
+    removerUsuarioTeste(paciente.id);
+    removerUsuarioTeste(administradorB.id);
+    removerUsuarioTeste(administradorA.id);
   }
 });
